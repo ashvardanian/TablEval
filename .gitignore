@@ -1,2 +1,6 @@
 .csv
 __pycache__
+.DS_Store
+*.csv
+tmp/
+dask-worker-space/
