@@ -4,14 +4,14 @@ from modin.config import Engine
 
 from pa_taxis import PaTaxis
 
-ray.init()
+ray.init(include_dashboard=False)
 Engine.put('ray')
 
 
 class MoTaxis(PaTaxis):
 
-    def __init__(self) -> None:
-        super().__init__(modin.pandas)
+    def __init__(self, **kwargs) -> None:
+        super().__init__(modin.pandas, **kwargs)
 
     def cleanup(self):
         # Modin doesn't natively support masking and defaults ot Pandas.
