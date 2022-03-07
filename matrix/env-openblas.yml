@@ -1,9 +1,9 @@
-name: numpy_blis
+name: adsb_openblas
 channels:
   - conda-forge
   - defaults
 dependencies:
-  - 'blas=*=blis'
+  - 'blas=*=openblas'
   - numpy
   - scipy
   - pandas

@@ -1,11 +1,10 @@
-name: numpy_cupy
+name: adsb_mkl
 channels:
   - conda-forge
   - defaults
 dependencies:
+  - 'blas=*=mkl'
   - numpy
   - scipy
   - pandas
-  - cutensor
-  - cupy
   - fire

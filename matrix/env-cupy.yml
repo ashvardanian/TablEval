@@ -1,10 +1,11 @@
-name: numpy_openblas
+name: adsb_cupy
 channels:
   - conda-forge
   - defaults
 dependencies:
-  - 'blas=*=openblas'
   - numpy
   - scipy
   - pandas
+  - cutensor
+  - cupy
   - fire

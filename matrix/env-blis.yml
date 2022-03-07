@@ -1,9 +1,9 @@
-name: numpy_mkl
+name: adsb_numpy_blis
 channels:
   - conda-forge
   - defaults
 dependencies:
-  - 'blas=*=mkl'
+  - 'blas=*=blis'
   - numpy
   - scipy
   - pandas
