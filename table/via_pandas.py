@@ -12,7 +12,7 @@ def taxi_rides_paths() -> List[str]:
     return sorted(glob.glob(pattern, recursive=True))
 
 
-class PaTaxis:
+class ViaPandas:
     """
     """
 
@@ -100,12 +100,16 @@ class PaTaxis:
         )
         return final_df
 
+    def close(self):
+        self.df = None
+        self.backend = None
+
     def log(self):
         print('Query 1: Counts by Different Vendors\n', self.query1())
         print('Query 2: Mean Ride Prices\n', self.query2())
-        print('Query 3: Counts by Vendor and Year\n', self.query3())
-        print('Query 4: Counts by Vendor and Year and Distance, Sorted\n', self.query4())
+        print('Query 3: Counts by Number of Passengers and Year\n', self.query3())
+        print('Query 4: Counts by Number of Passengers and Year and Distance, Sorted\n', self.query4())
 
 
 if __name__ == '__main__':
-    PaTaxis().log()
+    ViaPandas().log()
