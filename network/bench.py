@@ -2,6 +2,8 @@ from typing import List, Generator
 import pathlib
 import os
 import psutil
+import numpy as np
+import pandas as pd
 
 from shared import Bench, run_persisted_benchmarks
 from preprocess import download_datasets, get_all_paths
@@ -9,26 +11,55 @@ from preprocess import download_datasets, get_all_paths
 
 def benchmarks_for_backend(class_: type, class_name: str, path: str) -> Generator[Bench, None, None]:
 
-    funcs = [
-        ('Parse', lambda: globals().update(
-            {'df': class_(path=path)})),
-        ('PageRank', lambda: globals()['df'].pagerank()),
-        ('Community Detection', lambda: globals()['df'].community()),
-        ('Weakly Connected Compenents', lambda: globals()['df'].wcc()),
-        ('Pairwise Distances', lambda: globals()['df'].pairwise_distances()),
-        ('Force Layout', lambda: globals()['df'].force_layout()),
-        ('Close', lambda: globals()['df'].close()),
+    df = pd.read_parquet(os.path.splitext(path)[0]+".parquet")
+    edges = df.to_numpy()
+    nodes = np.unique(edges.flatten())
+
+    yield Bench(
+        operation='Init',
+        backend=class_name,
+        dataset=None,
+        dataset_bytes=None,
+        funcs=[lambda: globals().update(
+            {'net': class_(edge_list_path=path)})],
+        max_iterations=100
+    )
+
+    def crud_operation(arr, method_name):
+        start = 0
+        batch_size = 100
+        while True:
+            if(start > arr.size):
+                break
+            yield lambda: getattr(globals()['net'], method_name)(arr[start:start+batch_size])
+            start += batch_size
+
+    operations = [
+        ('Parse', [lambda: globals()['net'].parse()]),
+        ('PageRank', [lambda: globals()['net'].pagerank()]),
+        ('Community Detection', [lambda: globals()['net'].community()]),
+        ('Weakly Connected Compenents', [lambda: globals()['net'].wcc()]),
+        ('Pairwise Distances', [
+         lambda: globals()['net'].pairwise_distances()]),
+        ('Force Layout', [lambda: globals()['net'].force_layout()]),
+        ('Scan Edges', [lambda: globals()['net'].scan_edges()]),
+        ('Scan Nodes', [lambda: globals()['net'].scan_vertices()]),
+        ('Remove Edges', list(crud_operation(edges, 'remove_edges'))),
+        ('Upsert Edges', list(crud_operation(edges, 'upsert_edges'))),
+        ('Remove Nodes', list(crud_operation(nodes, 'remove_vertices'))),
+        ('Upsert Nodes', list(crud_operation(nodes, 'upsert_vertices')))
     ]
 
-    for func_name, func in funcs:
+    for operation, funcs in operations:
 
         yield Bench(
-            once=True if func_name == 'Close' else False,
-            operation=func_name,
+            operation=operation,
             backend=class_name,
             dataset=None,
             dataset_bytes=None,
-            func=func,
+            funcs=funcs,
+            max_iterations=1 if operation in ['Remove Edges', 'Upsert Edges', 'Remove Nodes',
+                                              'Upsert Nodes'] else 100
         )
 
 

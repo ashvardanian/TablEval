@@ -82,15 +82,6 @@
     },
     {
         "backend": "NetworkX",
-        "operation": "Community Detection",
-        "dataset": "butterfly_labels",
-        "dataset_bytes": 4954,
-        "seconds": 600.0000002384,
-        "iterations": 955616595,
-        "error": ""
-    },
-    {
-        "backend": "NetworkX",
         "operation": "Weakly Connected Compenents",
         "dataset": "butterfly_labels",
         "dataset_bytes": 4954,
@@ -388,20 +379,20 @@
     },
     {
         "backend": "NetworkX",
+        "operation": "Parse",
+        "dataset": "bitcoin_alpha",
+        "dataset_bytes": 185864,
+        "seconds": 600.0169663429,
+        "iterations": 10503,
+        "error": ""
+    },
+    {
+        "backend": "NetworkX",
         "operation": "PageRank",
         "dataset": "bitcoin_alpha",
         "dataset_bytes": 185864,
         "seconds": 600.0074560642,
         "iterations": 15992,
-        "error": ""
-    },
-    {
-        "backend": "NetworkX",
-        "operation": "Community Detection",
-        "dataset": "bitcoin_alpha",
-        "dataset_bytes": 185864,
-        "seconds": 600.0000002384,
-        "iterations": 953316098,
         "error": ""
     },
     {
@@ -712,15 +703,6 @@
     },
     {
         "backend": "NetworkX",
-        "operation": "Community Detection",
-        "dataset": "facebook",
-        "dataset_bytes": 854358,
-        "seconds": 600.0000004768,
-        "iterations": 964190990,
-        "error": ""
-    },
-    {
-        "backend": "NetworkX",
         "operation": "Weakly Connected Compenents",
         "dataset": "facebook",
         "dataset_bytes": 854358,
@@ -1014,15 +996,6 @@
         "dataset_bytes": 991081,
         "seconds": 600.0558600426,
         "iterations": 3373,
-        "error": ""
-    },
-    {
-        "backend": "NetworkX",
-        "operation": "Community Detection",
-        "dataset": "wiki_vote",
-        "dataset_bytes": 991081,
-        "seconds": 600.0000002384,
-        "iterations": 969404003,
         "error": ""
     },
     {
@@ -1324,15 +1297,6 @@
     },
     {
         "backend": "NetworkX",
-        "operation": "Community Detection",
-        "dataset": "enron",
-        "dataset_bytes": 3681450,
-        "seconds": 600.0000004768,
-        "iterations": 975278884,
-        "error": ""
-    },
-    {
-        "backend": "NetworkX",
         "operation": "Weakly Connected Compenents",
         "dataset": "enron",
         "dataset_bytes": 3681450,
@@ -1630,15 +1594,6 @@
     },
     {
         "backend": "NetworkX",
-        "operation": "Community Detection",
-        "dataset": "slashdot",
-        "dataset_bytes": 9841542,
-        "seconds": 600.0000007153,
-        "iterations": 968717924,
-        "error": ""
-    },
-    {
-        "backend": "NetworkX",
         "operation": "Weakly Connected Compenents",
         "dataset": "slashdot",
         "dataset_bytes": 9841542,
@@ -1909,15 +1864,6 @@
     },
     {
         "backend": "NetworkX",
-        "operation": "Community Detection",
-        "dataset": "twitter",
-        "dataset_bytes": 44550110,
-        "seconds": 600.0000004768,
-        "iterations": 958049307,
-        "error": ""
-    },
-    {
-        "backend": "NetworkX",
         "operation": "Weakly Connected Compenents",
         "dataset": "twitter",
         "dataset_bytes": 44550110,
@@ -2170,15 +2116,6 @@
     },
     {
         "backend": "NetworkX",
-        "operation": "Community Detection",
-        "dataset": "wiki_topcasts",
-        "dataset_bytes": 422022758,
-        "seconds": 600.0000002384,
-        "iterations": 966100470,
-        "error": ""
-    },
-    {
-        "backend": "NetworkX",
         "operation": "Weakly Connected Compenents",
         "dataset": "wiki_topcasts",
         "dataset_bytes": 422022758,
@@ -2409,15 +2346,6 @@
         "dataset_bytes": 1011604072,
         "seconds": 608.4081921577,
         "iterations": 3,
-        "error": ""
-    },
-    {
-        "backend": "NetworkX",
-        "operation": "Community Detection",
-        "dataset": "live_journal",
-        "dataset_bytes": 1011604072,
-        "seconds": 600.0000004768,
-        "iterations": 971463128,
         "error": ""
     },
     {
@@ -2656,15 +2584,6 @@
     },
     {
         "backend": "NetworkX",
-        "operation": "Community Detection",
-        "dataset": "orkut",
-        "dataset_bytes": 1769771838,
-        "seconds": 600.0000002384,
-        "iterations": 967652157,
-        "error": ""
-    },
-    {
-        "backend": "NetworkX",
         "operation": "Weakly Connected Compenents",
         "dataset": "orkut",
         "dataset_bytes": 1769771838,
@@ -2823,7 +2742,7 @@
         "dataset_bytes": 991081,
         "seconds": 0.0,
         "iterations": 0,
-        "error": "KeyError('df')"
+        "error": "TimeOut"
     },
     {
         "backend": "NetworkX",
@@ -2832,7 +2751,7 @@
         "dataset_bytes": 3681450,
         "seconds": 0.0,
         "iterations": 0,
-        "error": "KeyError('df')"
+        "error": "TimeOut"
     },
     {
         "backend": "NetworkX",
@@ -2841,7 +2760,43 @@
         "dataset_bytes": 9841542,
         "seconds": 0.0,
         "iterations": 0,
-        "error": "KeyError('df')"
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Pairwise Distances",
+        "dataset": "twitter",
+        "dataset_bytes": 44550110,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Pairwise Distances",
+        "dataset": "wiki_topcasts",
+        "dataset_bytes": 422022758,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Pairwise Distances",
+        "dataset": "live_journal",
+        "dataset_bytes": 1011604072,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Pairwise Distances",
+        "dataset": "orkut",
+        "dataset_bytes": 1769771838,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
     },
     {
         "backend": "NetworkX",
@@ -2853,10 +2808,82 @@
         "error": "TimeOut"
     },
     {
+        "backend": "NetworkX",
+        "operation": "Force Layout",
+        "dataset": "twitter",
+        "dataset_bytes": 44550110,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Force Layout",
+        "dataset": "wiki_topcasts",
+        "dataset_bytes": 422022758,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Force Layout",
+        "dataset": "live_journal",
+        "dataset_bytes": 1011604072,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Force Layout",
+        "dataset": "orkut",
+        "dataset_bytes": 1769771838,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
         "backend": "RetworkX",
         "operation": "Pairwise Distances",
         "dataset": "slashdot",
         "dataset_bytes": 9841542,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "RetworkX",
+        "operation": "Pairwise Distances",
+        "dataset": "twitter",
+        "dataset_bytes": 44550110,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "RetworkX",
+        "operation": "Pairwise Distances",
+        "dataset": "wiki_topcasts",
+        "dataset_bytes": 422022758,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "RetworkX",
+        "operation": "Pairwise Distances",
+        "dataset": "live_journal",
+        "dataset_bytes": 1011604072,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "RetworkX",
+        "operation": "Pairwise Distances",
+        "dataset": "orkut",
+        "dataset_bytes": 1769771838,
         "seconds": 0.0,
         "iterations": 0,
         "error": "TimeOut"
@@ -2871,37 +2898,73 @@
         "error": "TimeOut"
     },
     {
-        "backend": "NetworkX",
+        "backend": "IGraph",
         "operation": "Pairwise Distances",
         "dataset": "twitter",
         "dataset_bytes": 44550110,
         "seconds": 0.0,
         "iterations": 0,
-        "error": "KeyError('df')"
+        "error": "TimeOut"
     },
     {
-        "backend": "NetworkX",
-        "operation": "Force Layout",
-        "dataset": "twitter",
-        "dataset_bytes": 44550110,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "RetworkX",
+        "backend": "IGraph",
         "operation": "Pairwise Distances",
-        "dataset": "twitter",
-        "dataset_bytes": 44550110,
+        "dataset": "wiki_topcasts",
+        "dataset_bytes": 422022758,
         "seconds": 0.0,
         "iterations": 0,
-        "error": "KeyError('df')"
+        "error": "TimeOut"
+    },
+    {
+        "backend": "IGraph",
+        "operation": "Pairwise Distances",
+        "dataset": "live_journal",
+        "dataset_bytes": 1011604072,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "IGraph",
+        "operation": "Pairwise Distances",
+        "dataset": "orkut",
+        "dataset_bytes": 1769771838,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
     },
     {
         "backend": "RetworkX",
         "operation": "Force Layout",
         "dataset": "twitter",
         "dataset_bytes": 44550110,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "RetworkX",
+        "operation": "Force Layout",
+        "dataset": "wiki_topcasts",
+        "dataset_bytes": 422022758,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "RetworkX",
+        "operation": "Force Layout",
+        "dataset": "live_journal",
+        "dataset_bytes": 1011604072,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "RetworkX",
+        "operation": "Force Layout",
+        "dataset": "orkut",
+        "dataset_bytes": 1769771838,
         "seconds": 0.0,
         "iterations": 0,
         "error": "TimeOut"
@@ -2916,31 +2979,31 @@
         "error": "TimeOut"
     },
     {
-        "backend": "IGraph",
-        "operation": "Pairwise Distances",
-        "dataset": "twitter",
-        "dataset_bytes": 44550110,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "NetworkX",
+        "backend": "Snap",
         "operation": "Pairwise Distances",
         "dataset": "wiki_topcasts",
         "dataset_bytes": 422022758,
         "seconds": 0.0,
         "iterations": 0,
-        "error": "KeyError('df')"
+        "error": "TimeOut"
     },
     {
-        "backend": "NetworkX",
-        "operation": "Force Layout",
-        "dataset": "wiki_topcasts",
-        "dataset_bytes": 422022758,
+        "backend": "Snap",
+        "operation": "Pairwise Distances",
+        "dataset": "live_journal",
+        "dataset_bytes": 1011604072,
         "seconds": 0.0,
         "iterations": 0,
-        "error": "KeyError('df')"
+        "error": "TimeOut"
+    },
+    {
+        "backend": "Snap",
+        "operation": "Pairwise Distances",
+        "dataset": "orkut",
+        "dataset_bytes": 1769771838,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
     },
     {
         "backend": "RetworkX",
@@ -2953,30 +3016,21 @@
     },
     {
         "backend": "RetworkX",
-        "operation": "Pairwise Distances",
-        "dataset": "wiki_topcasts",
-        "dataset_bytes": 422022758,
+        "operation": "Weakly Connected Compenents",
+        "dataset": "live_journal",
+        "dataset_bytes": 1011604072,
         "seconds": 0.0,
         "iterations": 0,
-        "error": "KeyError('df')"
+        "error": "TimeOut"
     },
     {
         "backend": "RetworkX",
-        "operation": "Force Layout",
-        "dataset": "wiki_topcasts",
-        "dataset_bytes": 422022758,
+        "operation": "Weakly Connected Compenents",
+        "dataset": "orkut",
+        "dataset_bytes": 1769771838,
         "seconds": 0.0,
         "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "Snap",
-        "operation": "Pairwise Distances",
-        "dataset": "wiki_topcasts",
-        "dataset_bytes": 422022758,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
+        "error": "TimeOut"
     },
     {
         "backend": "IGraph",
@@ -2989,160 +3043,115 @@
     },
     {
         "backend": "IGraph",
-        "operation": "Pairwise Distances",
+        "operation": "Community Detection",
+        "dataset": "live_journal",
+        "dataset_bytes": 1011604072,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "IGraph",
+        "operation": "Community Detection",
+        "dataset": "orkut",
+        "dataset_bytes": 1769771838,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "IGraph",
+        "operation": "Force Layout",
+        "dataset": "orkut",
+        "dataset_bytes": 1769771838,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Community Detection",
+        "dataset": "butterfly_labels",
+        "dataset_bytes": 4962,
+        "seconds": 1.8809690475,
+        "iterations": 100,
+        "error": ""
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Community Detection",
+        "dataset": "bitcoin_alpha",
+        "dataset_bytes": 185864,
+        "seconds": 34.8576126099,
+        "iterations": 100,
+        "error": ""
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Community Detection",
+        "dataset": "wiki_vote",
+        "dataset_bytes": 991081,
+        "seconds": 103.3247499466,
+        "iterations": 100,
+        "error": ""
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Community Detection",
+        "dataset": "facebook",
+        "dataset_bytes": 854358,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Community Detection",
+        "dataset": "enron",
+        "dataset_bytes": 3681450,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Community Detection",
+        "dataset": "slashdot",
+        "dataset_bytes": 9841542,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Community Detection",
+        "dataset": "twitter",
+        "dataset_bytes": 44550110,
+        "seconds": 0.0,
+        "iterations": 0,
+        "error": "TimeOut"
+    },
+    {
+        "backend": "NetworkX",
+        "operation": "Community Detection",
         "dataset": "wiki_topcasts",
         "dataset_bytes": 422022758,
         "seconds": 0.0,
         "iterations": 0,
-        "error": "KeyError('df')"
+        "error": "TimeOut"
     },
     {
         "backend": "NetworkX",
-        "operation": "Pairwise Distances",
-        "dataset": "live_journal",
-        "dataset_bytes": 1011604072,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "NetworkX",
-        "operation": "Force Layout",
-        "dataset": "live_journal",
-        "dataset_bytes": 1011604072,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "RetworkX",
-        "operation": "Weakly Connected Compenents",
-        "dataset": "live_journal",
-        "dataset_bytes": 1011604072,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "RetworkX",
-        "operation": "Pairwise Distances",
-        "dataset": "live_journal",
-        "dataset_bytes": 1011604072,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "RetworkX",
-        "operation": "Force Layout",
-        "dataset": "live_journal",
-        "dataset_bytes": 1011604072,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "Snap",
-        "operation": "Pairwise Distances",
-        "dataset": "live_journal",
-        "dataset_bytes": 1011604072,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "IGraph",
         "operation": "Community Detection",
         "dataset": "live_journal",
         "dataset_bytes": 1011604072,
         "seconds": 0.0,
         "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "IGraph",
-        "operation": "Pairwise Distances",
-        "dataset": "live_journal",
-        "dataset_bytes": 1011604072,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
+        "error": "TimeOut"
     },
     {
         "backend": "NetworkX",
-        "operation": "Pairwise Distances",
-        "dataset": "orkut",
-        "dataset_bytes": 1769771838,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "NetworkX",
-        "operation": "Force Layout",
-        "dataset": "orkut",
-        "dataset_bytes": 1769771838,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "RetworkX",
-        "operation": "Weakly Connected Compenents",
-        "dataset": "orkut",
-        "dataset_bytes": 1769771838,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "RetworkX",
-        "operation": "Pairwise Distances",
-        "dataset": "orkut",
-        "dataset_bytes": 1769771838,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "RetworkX",
-        "operation": "Force Layout",
-        "dataset": "orkut",
-        "dataset_bytes": 1769771838,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "Snap",
-        "operation": "Pairwise Distances",
-        "dataset": "orkut",
-        "dataset_bytes": 1769771838,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "IGraph",
         "operation": "Community Detection",
-        "dataset": "orkut",
-        "dataset_bytes": 1769771838,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "IGraph",
-        "operation": "Pairwise Distances",
-        "dataset": "orkut",
-        "dataset_bytes": 1769771838,
-        "seconds": 0.0,
-        "iterations": 0,
-        "error": "KeyError('df')"
-    },
-    {
-        "backend": "IGraph",
-        "operation": "Force Layout",
         "dataset": "orkut",
         "dataset_bytes": 1769771838,
         "seconds": 0.0,

@@ -1,20 +1,30 @@
+import os
 import networkx as nx
 
 
 class ViaNetworkX:
 
-    def __init__(self, path: str):
+    def __init__(self, edge_list_path: os.PathLike):
+        self.edge_list_path = edge_list_path
+        self.reinitialize()
+
+    def reinitialize(self):
         # https://networkx.org/documentation/stable/reference/readwrite/generated/networkx.readwrite.edgelist.read_edgelist.html?highlight=read_edgelist
-        self.g = nx.read_edgelist(path, delimiter=" ",
-                                  create_using=nx.DiGraph())
+        self.g = nx.read_edgelist(
+            self.edge_list_path,
+            delimiter=' ',
+            create_using=nx.DiGraph())
+
+    def parse(self):
+        self.reinitialize()
 
     def pagerank(self):
         # https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.link_analysis.pagerank_alg.pagerank.html?highlight=pagerank
         return nx.pagerank(self.g)
 
     def community(self):
-        # https://networkx.org/documentation/stable/reference/algorithms/community.html?highlight=girvan_newman
-        return nx.algorithms.community.girvan_newman(self.g)
+        # https://networkx.org/documentation/stable/reference/algorithms/community.html?highlight=louvain_communities
+        return nx.algorithms.community.louvain_communities(self.g)
 
     def wcc(self):
         # https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.components.weakly_connected_components.html?highlight=weakly_connected_components
@@ -30,3 +40,29 @@ class ViaNetworkX:
 
     def close(self):
         self.g = None
+
+    def scan_vertices(self):
+        cnt = 0
+        for node in self.g.nodes():
+            cnt += 1
+
+    def scan_edges(self):
+        cnt = 0
+        for edge in self.g.edges():
+            cnt += 1
+
+    def upsert_edges(self, edges):
+        # https://networkx.org/documentation/stable/reference/classes/generated/networkx.Graph.add_edges_from.html
+        self.g.remove_edges_from(edges)
+
+    def remove_edges(self, edges):
+        # https://networkx.org/documentation/stable/reference/classes/generated/networkx.Graph.remove_edges_from.html
+        self.g.remove_edges_from(edges)
+
+    def upsert_vertices(self, nodes):
+        # https://networkx.org/documentation/stable/reference/classes/generated/networkx.Graph.add_nodes_from.html
+        self.g.add_nodes_from(nodes)
+
+    def remove_vertices(self, nodes):
+        # https://networkx.org/documentation/stable/reference/classes/generated/networkx.Graph.remove_nodes_from.html
+        self.g.remove_nodes_from(nodes)
