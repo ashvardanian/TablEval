@@ -1,0 +1,128 @@
+<svg width="1600" height="920" viewBox="0 0 1600 920" fill="none" xmlns="http://www.w3.org/2000/svg">
+<title>Count in parallel, then merge once.</title>
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+  <path d="M0 0V6" stroke="#FFE6A7" stroke-width="2"/>
+</pattern>
+<pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+  <circle cx="3" cy="3" r="1.3" fill="#FFE6A7"/>
+</pattern>
+<pattern id="rows" width="6" height="6" patternUnits="userSpaceOnUse">
+  <path d="M0 3H6" stroke="#FFE6A7" stroke-width="1.6"/>
+</pattern>
+<marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto">
+  <path d="M0 0L12 6L0 12Z" fill="#FFE6A7"/>
+</marker>
+</defs>
+<rect width="1600" height="920" fill="#C44536"/>
+<g id="partitioned-aggregation" font-family="Poppins, Helvetica, Arial, sans-serif" stroke-linecap="round" stroke-linejoin="round">
+<text x="70" y="58" font-size="20" fill="#FFE6A7">TablEval / analytics notes</text>
+<text x="70" y="140" font-size="54" fill="#FFE6A7">Count in parallel, then merge once.</text>
+<text x="70" y="200" font-size="23" fill="#FFE6A7">A GROUP BY splits the table into morsels, counts each one into a private table per thread, then merges.</text>
+<text x="70" y="262" font-size="19" fill="#FFE6A7">morsels</text>
+<text x="96" y="320" font-size="16" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">0</text>
+<rect x="110" y="290" width="150" height="48" fill="url(#hatch)" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="96" y="376" font-size="16" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<rect x="110" y="346" width="150" height="48" fill="url(#dots)" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="96" y="432" font-size="16" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">2</text>
+<rect x="110" y="402" width="150" height="48" fill="url(#rows)" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="96" y="488" font-size="16" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">3</text>
+<rect x="110" y="458" width="150" height="48" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="96" y="544" font-size="16" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">4</text>
+<rect x="110" y="514" width="150" height="48" fill="url(#dots)" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="96" y="600" font-size="16" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">5</text>
+<rect x="110" y="570" width="150" height="48" fill="url(#hatch)" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="96" y="656" font-size="16" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">6</text>
+<rect x="110" y="626" width="150" height="48" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="96" y="712" font-size="16" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">7</text>
+<rect x="110" y="682" width="150" height="48" fill="url(#rows)" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="420" y="270" width="22" height="22" fill="url(#hatch)" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="454" y="288" font-size="18" fill="#FFE6A7">thread 0</text>
+<text x="680" y="288" font-size="15" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">morsels 0, 5</text>
+<path d="M268 314.0L410 281" stroke="#FFE6A7" stroke-width="1.5" opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M268 594.0L410 281" stroke="#FFE6A7" stroke-width="1.5" opacity="0.55" marker-end="url(#arrow)"/>
+<rect x="420" y="304" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="420" y="332" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="420" y="360" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="436" y="324" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">CMT</text>
+<text x="664" y="324" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">41</text>
+<text x="436" y="352" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">VTS</text>
+<text x="664" y="352" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">57</text>
+<text x="436" y="380" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">DDS</text>
+<text x="664" y="380" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">2</text>
+<rect x="420" y="406" width="22" height="22" fill="url(#dots)" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="454" y="424" font-size="18" fill="#FFE6A7">thread 1</text>
+<text x="680" y="424" font-size="15" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">morsels 1, 4</text>
+<path d="M268 370.0L410 417" stroke="#FFE6A7" stroke-width="1.5" opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M268 538.0L410 417" stroke="#FFE6A7" stroke-width="1.5" opacity="0.55" marker-end="url(#arrow)"/>
+<rect x="420" y="440" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="420" y="468" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="420" y="496" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="436" y="460" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">CMT</text>
+<text x="664" y="460" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">38</text>
+<text x="436" y="488" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">VTS</text>
+<text x="664" y="488" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">60</text>
+<text x="436" y="516" font-size="15" fill="#FFE6A7" opacity="0.6">no DDS rows</text>
+<rect x="420" y="542" width="22" height="22" fill="url(#rows)" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="454" y="560" font-size="18" fill="#FFE6A7">thread 2</text>
+<text x="680" y="560" font-size="15" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">morsels 2, 7</text>
+<path d="M268 426.0L410 553" stroke="#FFE6A7" stroke-width="1.5" opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M268 706.0L410 553" stroke="#FFE6A7" stroke-width="1.5" opacity="0.55" marker-end="url(#arrow)"/>
+<rect x="420" y="576" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="420" y="604" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="420" y="632" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="436" y="596" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">CMT</text>
+<text x="664" y="596" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">45</text>
+<text x="436" y="624" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">VTS</text>
+<text x="664" y="624" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">52</text>
+<text x="436" y="652" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">DDS</text>
+<text x="664" y="652" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<rect x="420" y="678" width="22" height="22" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="454" y="696" font-size="18" fill="#FFE6A7">thread 3</text>
+<text x="680" y="696" font-size="15" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">morsels 3, 6</text>
+<path d="M268 482.0L410 689" stroke="#FFE6A7" stroke-width="1.5" opacity="0.55" marker-end="url(#arrow)"/>
+<path d="M268 650.0L410 689" stroke="#FFE6A7" stroke-width="1.5" opacity="0.55" marker-end="url(#arrow)"/>
+<rect x="420" y="712" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="420" y="740" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="420" y="768" width="260" height="28" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="436" y="732" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">CMT</text>
+<text x="664" y="732" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">40</text>
+<text x="436" y="760" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">VTS</text>
+<text x="664" y="760" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">59</text>
+<text x="436" y="788" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">DDS</text>
+<text x="664" y="788" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">3</text>
+<path d="M688 346.0L820 528.0" stroke="#FFE6A7" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M688 482.0L820 528.0" stroke="#FFE6A7" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M688 618.0L820 528.0" stroke="#FFE6A7" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M688 754.0L820 528.0" stroke="#FFE6A7" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="830" y="470" font-size="18" fill="#FFE6A7">merged counts</text>
+<rect x="830" y="486" width="240" height="28" fill="none" stroke="#FFE6A7" stroke-width="2.5"/>
+<text x="846" y="506" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">CMT</text>
+<text x="1054" y="506" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">164</text>
+<rect x="830" y="514" width="240" height="28" fill="none" stroke="#FFE6A7" stroke-width="2.5"/>
+<text x="846" y="534" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">VTS</text>
+<text x="1054" y="534" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">228</text>
+<rect x="830" y="542" width="240" height="28" fill="none" stroke="#FFE6A7" stroke-width="2.5"/>
+<text x="846" y="562" font-size="17" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">DDS</text>
+<text x="1054" y="562" font-size="17" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">6</text>
+<text x="830" y="604" font-size="16" fill="#FFE6A7" opacity="0.8">one sum per key</text>
+<path d="M1140 270V776" stroke="#FFE6A7" stroke-width="1.5" opacity="0.4"/>
+<text x="1180" y="300" font-size="20" fill="#FFE6A7">Averages merge as pairs.</text>
+<text x="1180" y="338" font-size="17" fill="#FFE6A7">Each thread keeps a (sum, count)</text>
+<text x="1180" y="364" font-size="17" fill="#FFE6A7">pair per key, never a finished mean.</text>
+<text x="1180" y="430" font-size="16" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">thread 0</text>
+<text x="1300" y="430" font-size="16" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">sum 10</text>
+<text x="1410" y="430" font-size="16" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">count 1</text>
+<text x="1180" y="462" font-size="16" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">thread 1</text>
+<text x="1300" y="462" font-size="16" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">sum 60</text>
+<text x="1410" y="462" font-size="16" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">count 3</text>
+<path d="M1180 484H1530" stroke="#FFE6A7" stroke-width="1.5" opacity="0.6"/>
+<text x="1180" y="518" font-size="16" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">merged</text>
+<text x="1300" y="518" font-size="16" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">70 / 4 = 17.5</text>
+<text x="1180" y="580" font-size="17" fill="#FFE6A7">Averaging the two means</text>
+<text x="1180" y="606" font-size="17" fill="#FFE6A7">gives (10 + 20) / 2 = 15,</text>
+<text x="1180" y="632" font-size="17" fill="#FFE6A7">which ignores row counts.</text>
+<path d="M70 838H1530" stroke="#FFE6A7" stroke-width="1.5" opacity="0.6"/>
+<text x="70" y="880" font-size="18" fill="#FFE6A7">Fill shows which thread took each morsel. Threads take the next free morsel, so the split varies from run to run.</text>
+</g>
+</svg>

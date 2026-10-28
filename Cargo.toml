@@ -1,0 +1,123 @@
+[package]
+name = "tableval"
+version = "1.0.0-rc.1"
+edition = "2021"
+rust-version = "1.100"
+description = "Tabular analytics benchmarks for embedded engines, servers and GPUs"
+repository = "https://github.com/ashvardanian/TablEval"
+
+[lib]
+path = "src/bench.rs"
+
+[[bin]]
+name = "tabl-eval-duckdb"
+path = "src/duckdb.rs"
+required-features = ["duckdb-backend"]
+
+[[bin]]
+name = "tabl-eval-datafusion"
+path = "src/datafusion.rs"
+required-features = ["datafusion-backend"]
+
+[[bin]]
+name = "tabl-eval-polars"
+path = "src/polars.rs"
+required-features = ["polars-backend"]
+
+[[bin]]
+name = "tabl-eval-sqlite"
+path = "src/sqlite.rs"
+required-features = ["sqlite-backend"]
+
+[[bin]]
+name = "tabl-eval-arrow"
+path = "src/arrow.rs"
+required-features = ["arrow-backend"]
+
+[[bin]]
+name = "tabl-eval-clickhouse"
+path = "src/clickhouse.rs"
+required-features = ["clickhouse-backend"]
+
+[[bin]]
+name = "tabl-eval-postgres"
+path = "src/postgres.rs"
+required-features = ["postgres-backend"]
+
+[[bin]]
+name = "tabl-eval-cudf"
+path = "src/cudf.rs"
+required-features = ["cudf-backend"]
+
+[[bin]]
+name = "tabl-generate"
+path = "src/generate.rs"
+required-features = ["generate"]
+
+[[bin]]
+name = "tabl-download"
+path = "scripts/download.rs"
+required-features = ["download"]
+
+[dependencies]
+clap = { version = "4.6", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+glob = "0.3"
+sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
+libc = "0.2"
+parquet = { version = "60", default-features = false, features = ["arrow", "snap", "zstd"] }
+arrow = { version = "60", default-features = false, features = ["ffi"] }
+forkunion = { version = "4.0.0-rc.1", optional = true }
+duckdb = { version = "1", optional = true, features = ["bundled"] }
+polars = { version = "0.55", optional = true, default-features = false, features = [
+    "lazy",
+    "sql",
+    "parquet",
+    "temporal",
+    "round_series",
+    "dtype-categorical",
+] }
+datafusion = { version = "55", optional = true }
+# DataFusion's own Arrow major, with the C Data Interface its results cross into this crate's Arrow through.
+datafusion-arrow = { package = "arrow", version = "59", optional = true, default-features = false, features = ["ffi"] }
+tokio = { version = "1", optional = true, features = ["rt-multi-thread"] }
+rusqlite = { version = "0.41", optional = true, features = ["bundled", "functions"] }
+postgres = { version = "0.19", optional = true }
+ureq = { version = "3", optional = true, default-features = false }
+cudf = { version = "0.3", optional = true, default-features = false }
+tpchgen = { version = "4", optional = true }
+tpchgen-arrow = { version = "4", optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+perf-event2 = { version = "0.7", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = ["duckdb-backend"]
+duckdb-backend = ["dep:duckdb"]
+datafusion-backend = ["dep:datafusion", "dep:datafusion-arrow", "dep:tokio"]
+polars-backend = ["dep:polars"]
+sqlite-backend = ["dep:rusqlite"]
+arrow-backend = ["dep:forkunion"]
+tier2 = []
+clickhouse-backend = ["tier2", "dep:ureq"]
+postgres-backend = ["tier2", "dep:postgres"]
+cudf-backend = ["dep:cudf"]
+generate = ["dep:tpchgen", "dep:tpchgen-arrow", "dep:forkunion"]
+download = ["dep:ureq", "ureq/rustls"]
+perf-counters = ["dep:perf-event2"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[lints.clippy]
+format_push_string = "warn"
+inefficient_to_string = "warn"
+needless_collect = "warn"
+redundant_clone = "warn"
+unnecessary_to_owned = "warn"
+wildcard_imports = "warn"

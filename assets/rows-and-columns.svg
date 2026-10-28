@@ -1,0 +1,184 @@
+<svg width="1600" height="920" viewBox="0 0 1600 920" fill="none" xmlns="http://www.w3.org/2000/svg">
+<title>Group-by reads one narrow column.</title>
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+  <path d="M0 0V6" stroke="#FFE6A7" stroke-width="2"/>
+</pattern>
+<pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse">
+  <circle cx="3" cy="3" r="1.3" fill="#FFE6A7"/>
+</pattern>
+<pattern id="rows" width="6" height="6" patternUnits="userSpaceOnUse">
+  <path d="M0 3H6" stroke="#FFE6A7" stroke-width="1.6"/>
+</pattern>
+<marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto">
+  <path d="M0 0L12 6L0 12Z" fill="#FFE6A7"/>
+</marker>
+</defs>
+<rect width="1600" height="920" fill="#C44536"/>
+<g id="rows-and-columns" font-family="Poppins, Helvetica, Arial, sans-serif" stroke-linecap="round" stroke-linejoin="round">
+<text x="70" y="58" font-size="20" fill="#FFE6A7">TablEval / analytics notes</text>
+<text x="70" y="140" font-size="54" fill="#FFE6A7">Group-by reads one narrow column.</text>
+<text x="70" y="200" font-size="23" fill="#FFE6A7">Rows keep each trip together. Columns keep each field together and encode repeated strings as codes.</text>
+<text x="70" y="262" font-size="19" fill="#FFE6A7">Row-wise: each trip is stored together</text>
+<text x="125.0" y="300" font-size="14" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">vendor_id</text>
+<text x="235.0" y="300" font-size="14" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">pickup_at</text>
+<text x="365.0" y="300" font-size="14" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">passenger_count</text>
+<text x="510.0" y="300" font-size="14" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">trip_distance</text>
+<text x="650.0" y="300" font-size="14" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">total_amount</text>
+<rect x="70" y="316" width="110" height="44" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="125.0" y="345" font-size="18" text-anchor="middle" fill="#C44536" font-family="Red Hat Mono, ui-monospace, monospace">CMT</text>
+<rect x="180" y="316" width="110" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="235.0" y="345" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">08:14</text>
+<rect x="290" y="316" width="150" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="365.0" y="345" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<rect x="440" y="316" width="140" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="510.0" y="345" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">2.30</text>
+<rect x="580" y="316" width="140" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="650.0" y="345" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">14.80</text>
+<rect x="70" y="370" width="110" height="44" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="125.0" y="399" font-size="18" text-anchor="middle" fill="#C44536" font-family="Red Hat Mono, ui-monospace, monospace">VTS</text>
+<rect x="180" y="370" width="110" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="235.0" y="399" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">08:21</text>
+<rect x="290" y="370" width="150" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="365.0" y="399" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">2</text>
+<rect x="440" y="370" width="140" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="510.0" y="399" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">0.90</text>
+<rect x="580" y="370" width="140" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="650.0" y="399" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">7.50</text>
+<rect x="70" y="424" width="110" height="44" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="125.0" y="453" font-size="18" text-anchor="middle" fill="#C44536" font-family="Red Hat Mono, ui-monospace, monospace">CMT</text>
+<rect x="180" y="424" width="110" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="235.0" y="453" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">08:33</text>
+<rect x="290" y="424" width="150" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="365.0" y="453" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<rect x="440" y="424" width="140" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="510.0" y="453" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">5.10</text>
+<rect x="580" y="424" width="140" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="650.0" y="453" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">24.10</text>
+<rect x="70" y="478" width="110" height="44" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="125.0" y="507" font-size="18" text-anchor="middle" fill="#C44536" font-family="Red Hat Mono, ui-monospace, monospace">DDS</text>
+<rect x="180" y="478" width="110" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="235.0" y="507" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">08:47</text>
+<rect x="290" y="478" width="150" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="365.0" y="507" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">3</text>
+<rect x="440" y="478" width="140" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="510.0" y="507" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">1.40</text>
+<rect x="580" y="478" width="140" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="650.0" y="507" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">9.80</text>
+<rect x="70" y="532" width="110" height="44" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="125.0" y="561" font-size="18" text-anchor="middle" fill="#C44536" font-family="Red Hat Mono, ui-monospace, monospace">VTS</text>
+<rect x="180" y="532" width="110" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="235.0" y="561" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">09:02</text>
+<rect x="290" y="532" width="150" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="365.0" y="561" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<rect x="440" y="532" width="140" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="510.0" y="561" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">11.70</text>
+<rect x="580" y="532" width="140" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="650.0" y="561" font-size="18" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">41.30</text>
+<text x="840" y="262" font-size="19" fill="#FFE6A7">Column-wise: each field is stored together</text>
+<text x="976" y="344" font-size="15" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">vendor_id</text>
+<rect x="990" y="316" width="66" height="44" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="1023.0" y="345" font-size="18" text-anchor="middle" fill="#C44536" font-family="Red Hat Mono, ui-monospace, monospace">0</text>
+<rect x="1060" y="316" width="66" height="44" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="1093.0" y="345" font-size="18" text-anchor="middle" fill="#C44536" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<rect x="1130" y="316" width="66" height="44" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="1163.0" y="345" font-size="18" text-anchor="middle" fill="#C44536" font-family="Red Hat Mono, ui-monospace, monospace">0</text>
+<rect x="1200" y="316" width="66" height="44" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="1233.0" y="345" font-size="18" text-anchor="middle" fill="#C44536" font-family="Red Hat Mono, ui-monospace, monospace">2</text>
+<rect x="1270" y="316" width="66" height="44" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="1303.0" y="345" font-size="18" text-anchor="middle" fill="#C44536" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<text x="976" y="398" font-size="15" text-anchor="end" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">pickup_at</text>
+<rect x="990" y="370" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1023.0" y="399" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">08:14</text>
+<rect x="1060" y="370" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1093.0" y="399" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">08:21</text>
+<rect x="1130" y="370" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1163.0" y="399" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">08:33</text>
+<rect x="1200" y="370" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1233.0" y="399" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">08:47</text>
+<rect x="1270" y="370" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1303.0" y="399" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">09:02</text>
+<text x="976" y="452" font-size="15" text-anchor="end" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">passenger_count</text>
+<rect x="990" y="424" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1023.0" y="453" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<rect x="1060" y="424" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1093.0" y="453" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">2</text>
+<rect x="1130" y="424" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1163.0" y="453" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<rect x="1200" y="424" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1233.0" y="453" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">3</text>
+<rect x="1270" y="424" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1303.0" y="453" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<text x="976" y="506" font-size="15" text-anchor="end" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">trip_distance</text>
+<rect x="990" y="478" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1023.0" y="507" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">2.30</text>
+<rect x="1060" y="478" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1093.0" y="507" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">0.90</text>
+<rect x="1130" y="478" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1163.0" y="507" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">5.10</text>
+<rect x="1200" y="478" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1233.0" y="507" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">1.40</text>
+<rect x="1270" y="478" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1303.0" y="507" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">11.70</text>
+<text x="976" y="560" font-size="15" text-anchor="end" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">total_amount</text>
+<rect x="990" y="532" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1023.0" y="561" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">14.80</text>
+<rect x="1060" y="532" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1093.0" y="561" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">7.50</text>
+<rect x="1130" y="532" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1163.0" y="561" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">24.10</text>
+<rect x="1200" y="532" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1233.0" y="561" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">9.80</text>
+<rect x="1270" y="532" width="66" height="44" fill="none" stroke="#FFE6A7" stroke-width="1.5" opacity="0.5"/>
+<text x="1303.0" y="561" font-size="16" text-anchor="middle" fill="#FFE6A7" opacity="0.5" font-family="Red Hat Mono, ui-monospace, monospace">41.30</text>
+<text x="1390" y="302" font-size="16" fill="#FFE6A7">dictionary</text>
+<path d="M1344 338H1382" stroke="#FFE6A7" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="1390" y="316" width="140" height="36" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="1412" y="340" font-size="17" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">0</text>
+<path d="M1434 316V352" stroke="#FFE6A7" stroke-width="1.5" opacity="0.6"/>
+<text x="1482" y="340" font-size="17" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">"CMT"</text>
+<rect x="1390" y="352" width="140" height="36" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="1412" y="376" font-size="17" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<path d="M1434 352V388" stroke="#FFE6A7" stroke-width="1.5" opacity="0.6"/>
+<text x="1482" y="376" font-size="17" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">"VTS"</text>
+<rect x="1390" y="388" width="140" height="36" fill="none" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="1412" y="412" font-size="17" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">2</text>
+<path d="M1434 388V424" stroke="#FFE6A7" stroke-width="1.5" opacity="0.6"/>
+<text x="1482" y="412" font-size="17" text-anchor="middle" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">"DDS"</text>
+<text x="1390" y="504" font-size="16" fill="#FFE6A7" opacity="0.8">The other four</text>
+<text x="1390" y="528" font-size="16" fill="#FFE6A7" opacity="0.8">columns stay</text>
+<text x="1390" y="552" font-size="16" fill="#FFE6A7" opacity="0.8">unread.</text>
+<text x="70" y="652" font-size="19" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">SELECT vendor_id, COUNT(*) FROM trips GROUP BY vendor_id</text>
+<text x="70" y="714" font-size="18" fill="#FFE6A7">row-wise scan</text>
+<rect x="300" y="694" width="12" height="28" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="312" y="694" width="118" height="28" fill="url(#hatch)" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="430" y="694" width="12" height="28" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="442" y="694" width="118" height="28" fill="url(#hatch)" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="560" y="694" width="12" height="28" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="572" y="694" width="118" height="28" fill="url(#hatch)" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="690" y="694" width="12" height="28" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="702" y="694" width="118" height="28" fill="url(#hatch)" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="820" y="694" width="12" height="28" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="832" y="694" width="118" height="28" fill="url(#hatch)" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="966" y="714" font-size="17" fill="#FFE6A7">every field of every row</text>
+<text x="70" y="768" font-size="18" fill="#FFE6A7">column-wise scan</text>
+<rect x="300" y="748" width="7" height="28" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="307" y="748" width="7" height="28" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="314" y="748" width="7" height="28" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="321" y="748" width="7" height="28" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<rect x="328" y="748" width="7" height="28" fill="#FFE6A7" stroke="#FFE6A7" stroke-width="1.5"/>
+<text x="351" y="768" font-size="17" fill="#FFE6A7">five small codes, side by side</text>
+<text x="1270" y="652" font-size="16" fill="#FFE6A7">counts by code</text>
+<text x="1270" y="694" font-size="18" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">0</text>
+<text x="1310" y="694" font-size="18" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">CMT</text>
+<text x="1420" y="694" font-size="18" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">2</text>
+<text x="1270" y="726" font-size="18" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<text x="1310" y="726" font-size="18" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">VTS</text>
+<text x="1420" y="726" font-size="18" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">2</text>
+<text x="1270" y="758" font-size="18" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">2</text>
+<text x="1310" y="758" font-size="18" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">DDS</text>
+<text x="1420" y="758" font-size="18" text-anchor="end" fill="#FFE6A7" font-family="Red Hat Mono, ui-monospace, monospace">1</text>
+<path d="M70 838H1530" stroke="#FFE6A7" stroke-width="1.5" opacity="0.6"/>
+<text x="70" y="880" font-size="18" fill="#FFE6A7">Solid: the bytes this query needs. Codes index the dictionary, so the group table can be a plain array of counters.</text>
+</g>
+</svg>

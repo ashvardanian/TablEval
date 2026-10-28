@@ -1,10 +1,13 @@
-.csv
-__pycache__
+/target/
+/.cargo/config.toml
+/results/
+/plots/
+/.ruff_cache/
+__pycache__/
+*.pyc
 .DS_Store
-*.csv
-tmp/
-dask-worker-space/
-cufile.log
-.vscode/
-rmm_log.txt
-build/
+*.tmp
+
+# Datasets and engine storage are per-machine; the folder itself is tracked through its README.
+data/*
+!data/README.md

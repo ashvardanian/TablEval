@@ -1,0 +1,2 @@
+# TPC-H answers keep the trailing spaces of the comment strings they quote.
+sql/tpch/answers-*/*.csv -whitespace

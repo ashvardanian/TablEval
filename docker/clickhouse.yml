@@ -1,0 +1,10 @@
+# The server `tabl-eval-clickhouse` starts, for manual runs: docker compose -f docker/clickhouse.yml up
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    command: ["--", "--user_files_path=/dataset/"]
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+    ports: ["127.0.0.1::8123"]
+    volumes:
+      - ../data/tpch-sf1:/dataset:ro
