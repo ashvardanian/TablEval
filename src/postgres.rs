@@ -1,6 +1,7 @@
 //! PostgreSQL in Docker: the row-store server baseline, loaded through `COPY` from the Parquet parts.
 //!
-//! `--threads` sets the parallel workers a single query may use. Dynamic shared memory lives in `mmap`ed
+//! `--threads` sets the parallel workers a single query may use, while `shared_buffers` and `work_mem` stay as
+//! PostgreSQL ships them, inside a container capped to the run's memory limit. Dynamic shared memory lives in `mmap`ed
 //! files rather than the container's 64 MB `/dev/shm`, which parallel hash joins would otherwise outgrow.
 //!
 //! ## Build and run
@@ -34,9 +35,6 @@ const IMAGE: &str = "postgres:18.6";
 struct Cli {
     #[command(flatten)]
     common: CommonArgs,
-    /// Shared buffer pool, in PostgreSQL's spelling like 4GB.
-    #[arg(long, env = "TABLEVAL_SHARED_BUFFERS", default_value = "4GB")]
-    shared_buffers: String,
     /// Time limit for container start and readiness.
     #[arg(long, env = "TABLEVAL_STARTUP_TIME_LIMIT", default_value = "120s", value_parser = parse_duration_flag)]
     startup_time_limit: Duration,
@@ -46,20 +44,16 @@ struct PostgresBackend {
     container: ContainerHandle,
     client: Client,
     threads: usize,
-    shared_buffers: String,
     version: String,
+    shared_buffers: String,
+    work_mem: String,
+    limits: Value,
 }
 
 impl PostgresBackend {
-    fn open(
-        configuration: &Configuration,
-        path: &Path,
-        shared_buffers: &str,
-        startup_time_limit: Duration,
-    ) -> Result<Self> {
+    fn open(configuration: &Configuration, path: &Path, startup_time_limit: Duration) -> Result<Self> {
         let threads = configuration.threads.get();
         let settings = [
-            format!("shared_buffers={shared_buffers}"),
             format!("max_worker_processes={}", threads + 8),
             format!("max_parallel_workers={threads}"),
             format!("max_parallel_workers_per_gather={}", threads - 1),
@@ -91,16 +85,22 @@ impl PostgresBackend {
         );
         container.ready(|| Client::connect(&url, NoTls).map(drop).map_err(|e| format!("{e:?}")))?;
         let mut client = Client::connect(&url, NoTls).map_err(|e| format!("{e:?}"))?;
-        let version = client
-            .query_one("SHOW server_version", &[])
-            .map_err(|e| e.to_string())?
-            .get::<_, String>(0);
+        let mut show = |setting: &str| -> Result<String> {
+            let row = client
+                .query_one(&format!("SHOW {setting}"), &[])
+                .map_err(|e| e.to_string())?;
+            Ok(row.get::<_, String>(0))
+        };
+        let (version, shared_buffers, work_mem) = (show("server_version")?, show("shared_buffers")?, show("work_mem")?);
+        let limits = container.limits()?;
         Ok(Self {
             container,
             client,
             threads,
-            shared_buffers: shared_buffers.to_owned(),
             version,
+            shared_buffers,
+            work_mem,
+            limits,
         })
     }
 }
@@ -127,6 +127,8 @@ impl Backend for PostgresBackend {
             ("threads".into(), json!(self.threads)),
             ("max_parallel_workers_per_gather".into(), json!(self.threads - 1)),
             ("shared_buffers".into(), json!(self.shared_buffers)),
+            ("work_mem".into(), json!(self.work_mem)),
+            ("container_limits".into(), self.limits.clone()),
         ])
     }
 
@@ -220,21 +222,13 @@ impl Backend for PostgresBackend {
 
 fn main() -> Result<()> {
     let cli: Cli = tableval::parse_cli();
-    let settings = [
-        ("Shared buffers", cli.shared_buffers.clone()),
-        ("Startup time limit", tableval::spell_duration(cli.startup_time_limit)),
-    ];
-    run(
-        cli.common,
-        json!({"image": IMAGE, "shared_buffers": cli.shared_buffers}),
-        &settings,
-        |configuration, path| {
-            Ok(Box::new_in(
-                PostgresBackend::open(configuration, path, &cli.shared_buffers, cli.startup_time_limit)?,
-                System,
-            ))
-        },
-    )
+    let settings = [("Startup time limit", tableval::spell_duration(cli.startup_time_limit))];
+    run(cli.common, json!({"image": IMAGE}), &settings, |configuration, path| {
+        Ok(Box::new_in(
+            PostgresBackend::open(configuration, path, cli.startup_time_limit)?,
+            System,
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -246,7 +240,7 @@ mod tests {
         path: &std::path::Path,
     ) -> tableval::Result<Box<dyn tableval::Backend, System>> {
         Ok(Box::new_in(
-            PostgresBackend::open(configuration, path, "256MB", Duration::from_secs(120))?,
+            PostgresBackend::open(configuration, path, Duration::from_secs(120))?,
             System,
         ))
     }

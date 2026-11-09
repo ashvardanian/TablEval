@@ -82,13 +82,21 @@ impl ContainerHandle {
         let path = path.canonicalize().map_err(|e| e.to_string())?;
         let publish = format!("127.0.0.1::{port}");
         let mount = format!("type=bind,src={},dst={storage}", path.display());
-        let mut args = Vec::with_capacity_in(8 + env.len() * 2 + command.len(), System);
+        let budget = crate::output::budget();
+        let memory = format!("{}b", budget.memory_limit);
+        let mut args = Vec::with_capacity_in(14 + env.len() * 2 + command.len(), System);
         args.extend([
             "create".to_owned(),
             "--publish".into(),
             publish,
             "--mount".into(),
             mount,
+            "--cpuset-cpus".into(),
+            budget.cpus.clone(),
+            "--memory".into(),
+            memory.clone(),
+            "--memory-swap".into(),
+            memory,
         ]);
         if let Some((data, target)) = startup.data {
             let data = data.canonicalize().map_err(|e| format!("{}: {e}", data.display()))?;
@@ -155,6 +163,17 @@ impl ContainerHandle {
         let mut value: serde_json::Value = serde_json::from_str(&output).map_err(|e| e.to_string())?;
         value["scope"] = serde_json::json!("container");
         Ok(value)
+    }
+
+    /// The memory and cores Docker applied, read back from the container's `HostConfig`.
+    pub fn limits(&self) -> Result<serde_json::Value> {
+        let output = docker(["inspect", "--format", "{{json .HostConfig}}", &self.id])?;
+        let host: serde_json::Value = serde_json::from_str(&output).map_err(|e| e.to_string())?;
+        Ok(serde_json::json!({
+            "memory": host["Memory"],
+            "memory_swap": host["MemorySwap"],
+            "cpuset_cpus": host["CpusetCpus"],
+        }))
     }
 
     /// The container's cgroup v2 folder on the host, found through its main process; `None` where the

@@ -53,6 +53,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "allocator-api2"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c880a97d28a3681c0267bd29cff89621202715b065127cd445fa0f0fe0aa2880"
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2403,7 +2409,7 @@ version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
- "allocator-api2",
+ "allocator-api2 0.2.21",
  "equivalent",
  "foldhash 0.1.5",
 ]
@@ -2414,7 +2420,7 @@ version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 dependencies = [
- "allocator-api2",
+ "allocator-api2 0.2.21",
  "equivalent",
  "foldhash 0.2.0",
  "rayon",
@@ -2780,6 +2786,16 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "jsontape"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e168f2da4ec6606113d04ca66ed6e311c3a96276ac5f88554055ad660301a2f"
+dependencies = [
+ "allocator-api2 0.4.0",
+ "serde",
 ]
 
 [[package]]
@@ -4763,6 +4779,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
 
 [[package]]
+name = "smashtable"
+version = "1.0.0-rc.1"
+
+[[package]]
 name = "snap"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4865,6 +4885,22 @@ dependencies = [
  "unicode-bidi",
  "unicode-normalization",
  "unicode-properties",
+]
+
+[[package]]
+name = "stringtape"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b1d53a2189c6e282782aeac512b3153bad14da21c3e33bc0a415e24b3bcefbb"
+dependencies = [
+ "allocator-api2 0.4.0",
+]
+
+[[package]]
+name = "stringzilla"
+version = "6.0.0-rc.1"
+dependencies = [
+ "cmake",
 ]
 
 [[package]]
@@ -4994,6 +5030,7 @@ dependencies = [
  "tpchgen",
  "tpchgen-arrow",
  "ureq",
+ "ustore",
 ]
 
 [[package]]
@@ -5379,6 +5416,18 @@ dependencies = [
  "idna",
  "percent-encoding",
  "serde",
+]
+
+[[package]]
+name = "ustore"
+version = "1.0.0-rc.1"
+dependencies = [
+ "cmake",
+ "forkunion",
+ "jsontape",
+ "smashtable",
+ "stringtape",
+ "stringzilla",
 ]
 
 [[package]]

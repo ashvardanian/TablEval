@@ -7,7 +7,7 @@ It is the Rust successor to UDSB and a sibling of [RetriEval](https://github.com
 One shared runner drives embedded query engines, a hand-written Arrow baseline, database servers and GPU dataframes over the same Parquet parts.
 Runs load the tables once, time every query cold and then hot, verify each answer, and write timings, resource usage and configuration to JSON.
 
-## Quick Start
+## Quickstart
 
 ```sh
 sudo apt-get install build-essential clang cmake pkg-config
@@ -39,6 +39,7 @@ cargo run --release --no-default-features --features clickhouse-backend \
 | `tabl-eval-polars`, Polars 0.55 SQL        | `POLARS_MAX_THREADS`         | loaded, parquet   |  ✓   |      ✓ ¹      |    ✓ ¹     |
 | `tabl-eval-sqlite`, SQLite bundled         | one thread                   | loaded            |  ✓   |       ✓       |    ✓ ²     |
 | `tabl-eval-arrow`, arrow-rs 60 by hand     | ForkUnion                    | loaded            |  ✓   |  Q1 and Q6    |            |
+| `tabl-eval-ustore`, UStore NVMe documents | ForkUnion, gather lanes      | loaded            |  ✓   |  Q1 and Q6    |            |
 | `tabl-eval-clickhouse`, ClickHouse 25.8    | `max_threads`                | loaded, parquet   |  ✓   |       ✓       |     ✓      |
 | `tabl-eval-postgres`, PostgreSQL 18.6      | parallel workers per gather  | loaded            |  ✓   |       ✓       |     ✓      |
 | `tabl-eval-cudf`, cuDF through `cudf` 0.3  | one GPU                      | loaded            |  ✓   |  Q1 and Q6    |            |
@@ -47,19 +48,47 @@ cargo run --release --no-default-features --features clickhouse-backend \
 > ² SQLite has no `REGEXP_REPLACE` or `DATE_TRUNC`, so the ClickBench queries using them are reported as `unsupported`.
 
 The table describes what each adapter attempts; every report lists the queries an engine could not run.
-`loaded` ingests the parts into the engine's own storage before the queries: a DuckDB database file, DataFusion `MemTable`s, collected Polars frames, SQLite and PostgreSQL tables, ClickHouse MergeTree tables, decoded Arrow batches, or cuDF device tables.
+`loaded` ingests the parts into the engine's own storage before the queries: a DuckDB database file, DataFusion `MemTable`s, collected Polars frames, SQLite and PostgreSQL tables, ClickHouse MergeTree tables, decoded Arrow batches, UStore JSON documents, or cuDF device tables.
 `parquet` registers views over the parts, so every query decodes them again.
-Each engine keeps its own thread pool, sized by `--threads`; only the Arrow baseline splits work itself, evenly across a ForkUnion pool.
+Each engine keeps its own thread pool, sized by `--threads`; only the Arrow baseline and UStore split work themselves, evenly across a ForkUnion pool, through the same folds.
 Polars sizes one global pool when it first runs, so `tabl-eval-polars` takes one `--threads` value per process.
+
+Every engine runs as it ships, sized by its own rules against one budget: the cores of the process's affinity mask and the memory of its cgroup, which `--memory-limit` may narrow.
+Run a comparison inside `systemd-run --scope -p MemoryMax=…` under `taskset -c …`, so every engine sees the same machine.
+Server containers get the same cores and memory through `docker create --cpuset-cpus --memory --memory-swap`, and their reports read the applied limits back.
+DuckDB applies its own 80% rule to the memory limit, ClickHouse and PostgreSQL keep their shipped memory settings inside their capped containers, and SQLite keeps its shipped page cache.
 
 SQLite stores dates and timestamps as ISO text and rewrites three spellings of the shared SQL: date casts, `EXTRACT(YEAR …)` and `SUBSTRING(… FROM … FOR …)`.
 ClickHouse runs with `join_use_nulls` on, the standard SQL semantics for outer joins, and reads the parts through its `file` table function.
+Its query condition and file count caches are off, so hot runs recompute their answers, and loaded tables merge their parts with `OPTIMIZE TABLE … FINAL` before the queries.
 PostgreSQL ingests through `COPY` into unlogged tables and keeps dynamic shared memory in `mmap`ed files, since parallel hash joins outgrow a container's 64 MB `/dev/shm`.
 cuDF's group-by leaves out rows with null keys, where SQL keeps them as a group, so a dataset with null keys reports a mismatch there.
 It loads decimals as `Float64`, as SQLite and PostgreSQL store them, and filters TPC-H dates by year and day of the year.
 The `cudf` crate's C++ bridge builds against libcudf 26.04, and against 26.10 with fixes not yet released, which a `[patch.crates-io]` entry in `.cargo/config.toml` can point at.
 Its build reads `CUDF_ROOT`, the libcudf prefix such as the `libcudf` folder of the `libcudf-cu13` wheel, and `CUDA_PATH`, and links Arrow from a `pyarrow` installed beside it.
 The binary finds libcudf, RMM, KvikIO, nvCOMP, the RAPIDS logger and Arrow through `LD_LIBRARY_PATH`.
+
+UStore lands every table as one ingest of JSON documents on its NVMe engine, decimals as their unscaled integers and dates and timestamps as the integers Arrow holds.
+A query lists its table's keys, gathers only the columns it reads through `ustore_docs_gather`, and runs the Arrow baseline's folds over them; `--gather cpu`, the default, gathers on the host, `--gather gpu` on an `Executor::for_vram` executor, and `metadata` records which.
+The engine reads past the page cache, so it may pin and cache the whole memory limit.
+Host columns reach Arrow in place through the C data interface, while device columns cross to the host once, since the folds read host memory.
+`--gather gpu` needs a UStore library built with device kernels, named by `USTORE_LIBRARY_DIR`, and fails without one rather than gathering on the host.
+`--key-order` decides the order a gather reads its keys, and every report records it.
+`spread`, the default, reads keys 256 documents apart, while `sorted` reads them as a scan lists them, which is what an application would pass.
+The UStore engine reads each document alone, and neighbours in one flash page run at a tenth of the drive's rate, so `spread` works around that engine weakness rather than showing what an in-order caller gets.
+On the 2026-11-06 TPC-H SF1 `q01` runs on an RTX 4060 Laptop, both verified against the pinned answers:
+
+| Key order | GPU seconds | CPU seconds |
+| :-------- | ----------: | ----------: |
+| `sorted`  |         107 |         116 |
+| `spread`  |          34 |          38 |
+
+`--sample-rate` gathers a `docs_sample` draw instead of every key, as a separate measurement: it reports as `ustore-sampled` with its rate, skips digests, and writes under `results/sampled/`, which the plots do not read.
+
+Every UStore query reads through one snapshot and prints the bytes Arrow took over in place and copied for each column.
+A host gather splits the key windows across `--threads` lanes, each on an `Executor::for_nvme` with its share of the cores, and `--arena ring|per-call` keeps or frees each gather's arena once Arrow releases its columns.
+Further `--data-dir` folders spread its files across drives.
+`--ingest-during-queries` appends `lineitem` once more while `q06` gathers snapshot after snapshot, fails on any snapshot that holds no committed prefix, and writes under `results/ingest-during-queries/`.
 
 ## Queries
 
@@ -101,7 +130,7 @@ Each run reports a cold and several hot times per query, so tables built from th
 - `Device`: the cores or GPU a run used, like `128× Intel Xeon6` for physical cores or `148× NVIDIA SM103` for one B300.
 - `Source`: `loaded` or `parquet`.
 - `Load`: the wall time to ingest the fact table and the rest; `parquet` runs only register views.
-- Per-query columns hold the fastest hot run, in seconds; TPC-H and ClickBench tables give the geometric mean of the completed queries and the count of unsupported ones instead of 22 or 43 columns.
+- Per-query columns hold the fastest hot run, in seconds; TPC-H and ClickBench tables give the geometric mean over the queries every compared engine completed, and the count each engine left unsupported, instead of 22 or 43 columns.
 - `Memory`: the peak client RSS plus the server container's peak memory.
 
 Compare engines on the same dataset, row prefix, thread count and source, and only over queries that completed with matching answers.
@@ -126,7 +155,7 @@ tabl-eval-*
   --rows <N,...>                        all
       Fact-table prefixes in whole parts, with decimal K, M, G or T; a sweep.
   --threads <N,...>                     0
-      Engine threads, 0 for all cores; a sweep.
+      Engine threads, 0 for every core in the affinity mask; a sweep.
   --source <SOURCE,...>                 loaded
       loaded ingests the parts first, parquet queries them in place; a sweep.
   --queries <NAME,...>                  the whole suite
@@ -137,14 +166,17 @@ tabl-eval-*
       A cold run slower than this, like 60s, skips its hot runs; running queries are never interrupted.
   --verify <LEVEL>                      answers
       answers checks result digests, none skips them.
-  --data-dir <DIR>                      data
-      Parent of the engines' own storage, one folder per configuration, replaced on every run.
+  --data-dir <DIR,...>                  data
+      Parents of the engines' own storage, one folder per configuration, replaced on every run; the further ones
+      mirror it for engines that spread their files, one per drive.
   --output <DIR>                        results
       Directory for JSON reports.
+  --memory-limit <SIZE>                 the cgroup's limit, else all RAM
+      Memory the engine may use, page cache included, like 4GB; at most the cgroup's limit.
   --perf-counters                       off
       Record system-wide hardware counters per phase; Linux and the perf-counters feature only.
-  --drop-caches                         off
-      Sync and drop the host page cache before each cold run; Linux as root only.
+  --between-runs <POLICY>               keep
+      keep, reopen or reopen-and-drop-caches before each query's cold run; dropping caches needs Linux and root.
 ```
 
 </details>
@@ -153,17 +185,19 @@ tabl-eval-*
 <summary>Engine flags</summary>
 
 ```text
-tabl-eval-duckdb
-  --memory-limit <LIMIT>                80%
-      Memory DuckDB may use before it spills, as a share or a size like 64GB.
-
-tabl-eval-sqlite
-  --cache-size <SIZE>                   1GB
-      Page cache size.
-
-tabl-eval-postgres
-  --shared-buffers <SIZE>               4GB
-      Shared buffer pool, in PostgreSQL's spelling.
+tabl-eval-ustore
+  --gather <DEVICE>                     cpu
+      cpu gathers on the host, gpu on the first device.
+  --key-order <ORDER>                   spread
+      spread reads keys 256 documents apart, sorted reads them as listed.
+  --engine <ENGINE>                     nvme
+      nvme is UStore's own engine; rocksdb serves the same verbs through RocksDB.
+  --sample-rate <FRACTION>              none
+      Gather this share of the keys as a separate, labelled measurement.
+  --arena <POLICY>                      ring
+      ring keeps a gather's arena for a later one, per-call frees it.
+  --ingest-during-queries               off
+      Append lineitem once more while q06 gathers snapshot after snapshot.
 
 tabl-eval-clickhouse, tabl-eval-postgres
   --startup-time-limit <DURATION>       120s
@@ -202,10 +236,11 @@ tabl-download
 ## Output Format
 
 Reports are rewritten atomically after the load and after every query, one `<backend>-<config-hash>.json` per configuration.
-They contain the machine, the dataset's tables with their parts, rows and bytes, the requested configuration, and the engine's metadata and applied settings.
+They contain the machine with the run's budget of cores and memory, the dataset's tables with their parts, rows and bytes, the requested configuration, and the engine's metadata and applied settings.
 The load phase records its status, wall time, fact-table rows per second, sampled client CPU, memory and I/O, the same for the server, and the engine's disk usage.
 Servers are sampled through their container's cgroup v2 counters every 100 ms; where the host cannot reach the cgroup, as with Docker Desktop, a `docker stats` snapshot after the phase stands in.
 Each query records its status, cold and hot seconds, result rows, digest, whether a pinned answer was checked, and the same resource figures over all its runs.
+Every phase counts its page faults, and with the `count-allocations` feature its Rust heap allocations too, which routes every allocation through a counter.
 Statuses are `completed`, `unsupported`, `failed`, `timed-out` and `mismatch`; any `failed` or `mismatch` ends the run with a nonzero status after the remaining queries.
 
 ```sh
@@ -227,6 +262,7 @@ src/output.rs              Reports and atomic output
 src/perf_counters.rs       Optional system-wide hardware counters
 src/docker.rs              Owned container lifecycle
 src/rows.rs                Parquet parts as rows for SQL ingest
+src/folds.rs               Hand-written folds over Arrow batches
 src/fixture.rs             Four-trip Taxi fixture for tests
 src/<engine>.rs            One binary per engine
 src/generate.rs            TPC-H generator
@@ -250,7 +286,7 @@ Run `scripts/check-servers.sh` for the managed server checks.
 
 The backend table above describes current support, not every engine considered.
 Sirius, DuckDB's GPU extension over libcudf, waits until DuckDB publishes it as a loadable extension.
-chDB, StarRocks, Doris, Velox through Gluten, Turso and UStore remain later candidates, with no adapters or placeholder binaries in this crate.
+chDB, StarRocks, Doris, Velox through Gluten and Turso remain later candidates, with no adapters or placeholder binaries in this crate.
 
 The following planned capabilities remain incomplete:
 
@@ -262,7 +298,8 @@ The following planned capabilities remain incomplete:
 
 The cold run is the first execution after the load, not a cold machine.
 It pays for planning, first-touch allocation and, for `parquet` sources, decoding the parts, but the load usually leaves them in the page cache.
-`--drop-caches` empties the host page cache before every cold run, so `parquet` sources read the parts from the device; it affects the whole host and needs root.
+`--between-runs reopen` closes and reopens the engine's storage before every cold run, and `reopen-and-drop-caches` also empties the host page cache, so reads reach the device; dropping caches affects the whole host and needs root.
+DuckDB, SQLite and UStore reopen; the other engines run with `keep` alone.
 Hot runs reuse whatever the engine caches, from decoded columns to compiled plans, so the gap between cold and hot measures the engine as much as the query.
 
 ![A tall cold-run bar stacked from page-cache misses, Parquet decode, plan compilation and query execution beside three shorter hot-run bars that pay only for execution](assets/cold-and-hot.svg)

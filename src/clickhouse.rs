@@ -1,8 +1,9 @@
 //! ClickHouse in Docker over its HTTP interface, with MergeTree tables or views over the Parquet parts.
 //!
 //! The dataset folder is mounted read-only and set as the server's `user_files_path`, so the server reads
-//! the parts itself through the `file` table function. Each query runs with `max_threads` set to `--threads` and
-//! `join_use_nulls` on, the standard SQL semantics for outer joins.
+//! the parts itself through the `file` table function. Each query runs with `max_threads` set to `--threads`,
+//! `join_use_nulls` on, the standard SQL semantics for outer joins, and the query condition and file count caches
+//! off, so hot runs recompute their answers. Loaded tables merge their parts with `OPTIMIZE TABLE … FINAL`.
 //!
 //! ## Build and run
 //!
@@ -45,6 +46,7 @@ struct ClickhouseBackend {
     agent: ureq::Agent,
     threads: usize,
     version: String,
+    limits: Value,
 }
 
 impl ClickhouseBackend {
@@ -68,16 +70,18 @@ impl ClickhouseBackend {
             agent: ureq::Agent::new_with_config(config),
             threads: configuration.threads.get(),
             version: String::new(),
+            limits: Value::Null,
         };
         backend.container.ready(|| backend.post("SELECT 1").map(drop))?;
         backend.version = backend.post("SELECT version()")?.trim().to_owned();
+        backend.limits = backend.container.limits()?;
         Ok(backend)
     }
 
     /// Sends one statement and returns the response body, or the server's error text.
     fn post(&self, sql: &str) -> Result<String> {
         let url = format!(
-            "http://127.0.0.1:{}/?max_threads={}&join_use_nulls=1",
+            "http://127.0.0.1:{}/?max_threads={}&join_use_nulls=1&use_query_condition_cache=0&use_cache_for_count_from_files=0",
             self.container.port, self.threads
         );
         let mut response = self.agent.post(&url).send(sql).map_err(|e| e.to_string())?;
@@ -116,6 +120,9 @@ impl Backend for ClickhouseBackend {
             ("image".into(), json!(IMAGE)),
             ("threads".into(), json!(self.threads)),
             ("join_use_nulls".into(), json!(true)),
+            ("use_query_condition_cache".into(), json!(false)),
+            ("use_cache_for_count_from_files".into(), json!(false)),
+            ("container_limits".into(), self.limits.clone()),
         ])
     }
 
@@ -130,6 +137,10 @@ impl Backend for ClickhouseBackend {
                 Source::Parquet => format!("CREATE VIEW {} AS {scan}", table.name),
             };
             self.post(&statement).map_err(|e| format!("{}: {e}", table.name))?;
+            if source == Source::Loaded {
+                self.post(&format!("OPTIMIZE TABLE {} FINAL", table.name))
+                    .map_err(|e| format!("{}: {e}", table.name))?;
+            }
         }
         Ok(())
     }

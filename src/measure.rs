@@ -1,9 +1,14 @@
 //! Process resource usage, sampled every 100 ms while a load or query runs, and the same for a server
-//! container through its cgroup when the host exposes one.
+//! container through its cgroup when the host exposes one. Page faults count over the whole phase, and so do Rust heap
+//! allocations with the count-allocations feature, which routes every allocation through a counter.
 
 use std::{
+    alloc::{GlobalAlloc, Layout, System},
     path::{Path, PathBuf},
-    sync::mpsc,
+    sync::{
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+        mpsc,
+    },
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -24,6 +29,68 @@ pub struct ResourceUsage {
     pub virtual_memory_max_bytes: u64,
     pub read_bytes: u64,
     pub written_bytes: u64,
+    pub minor_faults: u64,
+    pub major_faults: u64,
+    pub allocations: Option<u64>,
+    pub allocated_bytes: Option<u64>,
+}
+
+/// Counts the Rust heap allocations of every thread but the resource sampler's, so a phase reports its own.
+pub struct CountingAllocator;
+
+#[cfg(feature = "count-allocations")]
+#[global_allocator]
+static ALLOCATOR: CountingAllocator = CountingAllocator;
+static ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
+static ALLOCATED_BYTES: AtomicU64 = AtomicU64::new(0);
+/// The `pthread_self` of the running sampler, whose own allocations stay uncounted; zero while none runs.
+static SAMPLER_THREAD: AtomicUsize = AtomicUsize::new(0);
+
+fn current_thread() -> usize {
+    // SAFETY: `pthread_self` has no preconditions and never fails.
+    unsafe { libc::pthread_self() as usize }
+}
+
+fn count_allocation(bytes: usize) {
+    if SAMPLER_THREAD.load(Ordering::Relaxed) != current_thread() {
+        ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+        ALLOCATED_BYTES.fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+}
+
+// SAFETY: every call forwards to `System` unchanged, after counting.
+unsafe impl GlobalAlloc for CountingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        count_allocation(layout.size());
+        System.alloc(layout)
+    }
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        count_allocation(layout.size());
+        System.alloc_zeroed(layout)
+    }
+    unsafe fn realloc(&self, address: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+        count_allocation(size);
+        System.realloc(address, layout, size)
+    }
+    unsafe fn dealloc(&self, address: *mut u8, layout: Layout) {
+        System.dealloc(address, layout)
+    }
+}
+
+/// Minor and major page faults of the whole process so far, then allocations and their bytes.
+fn faults_and_allocations() -> [u64; 4] {
+    // SAFETY: `rusage` is plain integers, which `getrusage` fills for this process.
+    let usage = unsafe {
+        let mut usage: libc::rusage = std::mem::zeroed();
+        libc::getrusage(libc::RUSAGE_SELF, &mut usage);
+        usage
+    };
+    [
+        usage.ru_minflt as u64,
+        usage.ru_majflt as u64,
+        ALLOCATIONS.load(Ordering::Relaxed),
+        ALLOCATED_BYTES.load(Ordering::Relaxed),
+    ]
 }
 
 /// What a cgroup reports at one instant: resident memory, CPU time, and bytes read and written.
@@ -92,6 +159,8 @@ impl ResourceSampler {
         let (stop, receiver) = mpsc::channel();
         let (ready, initialized) = mpsc::sync_channel(0);
         let handle = std::thread::spawn(move || {
+            SAMPLER_THREAD.store(current_thread(), Ordering::Relaxed);
+            let counted = faults_and_allocations();
             let pid = sysinfo::get_current_pid().unwrap();
             let mut system = ProcessSystem::new();
             system.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
@@ -154,6 +223,13 @@ impl ResourceSampler {
                     break;
                 }
             }
+            let [minor_faults, major_faults, allocations, allocated_bytes] = faults_and_allocations();
+            SAMPLER_THREAD.store(0, Ordering::Relaxed);
+            usage.minor_faults = minor_faults - counted[0];
+            usage.major_faults = major_faults - counted[1];
+            let counting = cfg!(feature = "count-allocations");
+            usage.allocations = counting.then(|| allocations - counted[2]);
+            usage.allocated_bytes = counting.then(|| allocated_bytes - counted[3]);
             let elapsed = start.elapsed().as_secs_f64();
             usage.cpu_avg_percent = usage.cpu_seconds / elapsed * 100.0;
             usage.rss_avg_bytes = (rss_sum / samples.max(1) as u128) as u64;

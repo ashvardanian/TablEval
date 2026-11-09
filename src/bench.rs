@@ -5,6 +5,8 @@ pub mod backend;
 #[cfg(feature = "tier2")]
 pub mod docker;
 pub mod fixture;
+#[cfg(any(feature = "arrow-backend", feature = "ustore-backend"))]
+pub mod folds;
 pub mod measure;
 pub mod output;
 pub mod perf_counters;
@@ -38,6 +40,16 @@ use crate::{
 /// Version of the report layout, bumped when a field changes meaning.
 const REPORT_SCHEMA_VERSION: u32 = 1;
 
+/// What happens to the engine's storage before each query's cold run.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BetweenRuns {
+    Keep,
+    Reopen,
+    /// Reopen and drop the host page cache; Linux as root only.
+    ReopenAndDropCaches,
+}
+
 /// Whether result rows are checked.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -56,7 +68,7 @@ pub struct CommonArgs {
     /// Fact-table row prefixes in whole parts, with decimal K, M, G or T; all rows when unset; a sweep.
     #[arg(long, env = "TABLEVAL_ROWS", value_delimiter = ',', value_parser = parse_count_flag)]
     pub rows: Vec<u64>,
-    /// Engine threads, 0 for all cores; a sweep.
+    /// Engine threads, 0 for every core in the affinity mask; a sweep.
     #[arg(long, env = "TABLEVAL_THREADS", value_delimiter = ',', default_value = "0", value_parser = parse_threads_flag)]
     pub threads: Vec<Threads>,
     /// loaded ingests the parts first, parquet queries them in place; a sweep.
@@ -80,18 +92,30 @@ pub struct CommonArgs {
     /// answers checks result digests, none skips them.
     #[arg(long, env = "TABLEVAL_VERIFY", value_enum, default_value = "answers")]
     pub verify: Verify,
-    /// Parent directory for the engines' own storage, one marked folder per configuration.
-    #[arg(long, env = "TABLEVAL_DATA_DIR", default_value = "data")]
-    pub data_dir: PathBuf,
+    /// Parent directories for the engines' own storage, one per drive: one marked folder per configuration in the
+    /// first, mirrored in each further one for engines that spread their files.
+    #[arg(long, env = "TABLEVAL_DATA_DIR", value_delimiter = ',', default_value = "data")]
+    pub data_dir: Vec<PathBuf>,
     /// Directory for JSON reports.
     #[arg(long, env = "TABLEVAL_OUTPUT", default_value = "results")]
     pub output: PathBuf,
+    /// Memory the engine may use, page cache included; at most this process's cgroup limit, which is the default.
+    #[arg(long, env = "TABLEVAL_MEMORY_LIMIT", value_parser = parse_size_flag)]
+    pub memory_limit: Option<u64>,
     /// Record system-wide hardware counters per phase; requires Linux and the perf-counters feature.
     #[arg(long, env = "TABLEVAL_PERF_COUNTERS", default_value_t = false, value_parser = clap::builder::BoolishValueParser::new())]
     pub perf_counters: bool,
-    /// Sync and drop the host page cache before each query's cold run; Linux as root only.
-    #[arg(long, env = "TABLEVAL_DROP_CACHES", default_value_t = false, value_parser = clap::builder::BoolishValueParser::new())]
-    pub drop_caches: bool,
+    /// Keep the engine's storage open before each query's cold run, reopen it, or also drop the page cache.
+    #[arg(long, env = "TABLEVAL_BETWEEN_RUNS", value_enum, default_value = "keep")]
+    pub between_runs: BetweenRuns,
+}
+
+impl CommonArgs {
+    /// The configuration folder at `path` mirrored under every `--data-dir` after the first.
+    pub fn further_data_dirs(&self, path: &Path) -> Vec<PathBuf> {
+        let name = path.file_name().unwrap_or_default();
+        self.data_dir[1..].iter().map(|parent| parent.join(name)).collect()
+    }
 }
 
 /// One point of the sweep, as a backend sees it when it opens.
@@ -198,6 +222,35 @@ pub fn spell_count(count: u64) -> String {
     format!("{count}{unit}")
 }
 
+/// Parses a size like `4096`, `64MB` or `1GB`: `KB`, `MB`, `GB`, `TB` are powers of 1024 in any case, and zero is
+/// `None`.
+pub fn parse_size(text: &str) -> Option<u64> {
+    let split = text.find(|c: char| !c.is_ascii_digit()).unwrap_or(text.len());
+    let level = ["", "kb", "mb", "gb", "tb"]
+        .iter()
+        .position(|unit| text[split..].eq_ignore_ascii_case(unit))?;
+    let bytes = text[..split].parse::<u64>().ok()?.checked_mul(1u64 << (10 * level))?;
+    (bytes != 0).then_some(bytes)
+}
+
+/// Spells a size the way `parse_size` reads it: `256MB`, `1000`.
+pub fn spell_size(bytes: u64) -> String {
+    let (mut count, mut unit) = (bytes, "");
+    for larger in ["KB", "MB", "GB", "TB"] {
+        if count == 0 || count % 1024 != 0 {
+            break;
+        }
+        count /= 1024;
+        unit = larger;
+    }
+    format!("{count}{unit}")
+}
+
+/// `parse_size` for clap.
+pub fn parse_size_flag(text: &str) -> Result<u64> {
+    parse_size(text).ok_or_else(|| "expected a size like 4096, 64KB or 1GB".into())
+}
+
 /// `parse_count` for clap.
 pub fn parse_count_flag(text: &str) -> Result<u64> {
     parse_count(text).ok_or_else(|| "expected a positive count like 1500 or 100M".into())
@@ -252,8 +305,8 @@ pub fn run(
     if args.perf_counters && !cfg!(all(target_os = "linux", feature = "perf-counters")) {
         return Err("--perf-counters requires Linux and the perf-counters feature".into());
     }
-    if args.drop_caches && !cfg!(target_os = "linux") {
-        return Err("--drop-caches requires Linux".into());
+    if args.between_runs == BetweenRuns::ReopenAndDropCaches && !cfg!(target_os = "linux") {
+        return Err("--between-runs reopen-and-drop-caches requires Linux".into());
     }
     let backend_options = serde_json::to_value(backend_options).map_err(|e| e.to_string())?;
     let dataset = Dataset::open(&args.dataset)?;
@@ -312,10 +365,20 @@ pub fn run(
         args.time_limit.map_or_else(|| "none".to_owned(), spell_duration)
     );
     eprintln!("- Verify: {}", spell_value(&args.verify));
-    eprintln!("- Data dir: {}", args.data_dir.display());
+    eprintln!(
+        "- Data dir: {}",
+        args.data_dir
+            .iter()
+            .map(|parent| parent.display().to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     eprintln!("- Output: {}", args.output.display());
     eprintln!("- Perf counters: {}", args.perf_counters);
-    eprintln!("- Drop caches: {}", args.drop_caches);
+    eprintln!("- Between runs: {}", spell_value(&args.between_runs));
+    let budget = output::Budget::resolve(args.memory_limit)?.install();
+    eprintln!("- Cores: {} ({})", budget.cores, budget.cpus);
+    eprintln!("- Memory limit: {}", spell_size(budget.memory_limit));
     for (name, value) in backend_settings {
         eprintln!("- {name}: {value}");
     }
@@ -346,12 +409,22 @@ pub fn run(
                 workload.threads = vec![threads];
                 workload.source = vec![source];
                 let identity = output::config_hash(&(&args.dataset, rows, threads, source, &backend_options))?;
-                let path = args.data_dir.join(format!("{engine}-{identity}"));
-                if path.exists() {
-                    std::fs::remove_dir_all(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                let path = args.data_dir[0].join(format!("{engine}-{identity}"));
+                let further = args.further_data_dirs(&path);
+                for folder in std::iter::once(&path).chain(&further) {
+                    if folder.exists() {
+                        std::fs::remove_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
+                    }
+                    std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
                 }
-                std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
                 let mut backend = open(&configuration, &path)?;
+                if !further.is_empty() && !backend.multiple_data_dirs() {
+                    return Err("this backend keeps its files in one --data-dir".into());
+                }
+                // Fails before the load on engines that cannot reopen.
+                if args.between_runs != BetweenRuns::Keep {
+                    backend.reopen()?;
+                }
                 let mut report = ConfigReport {
                     schema_version: REPORT_SCHEMA_VERSION,
                     started_unix_seconds: SystemTime::now()
@@ -370,6 +443,14 @@ pub fn run(
                     queries: Vec::new(),
                 };
                 report.config.insert("backend_options".into(), backend_options.clone());
+                if cfg!(feature = "count-allocations") {
+                    report.config.insert(
+                        "allocations_scope".into(),
+                        "Rust heap allocations of the process outside the resource sampler; C and C++ libraries go \
+                         unseen"
+                            .into(),
+                    );
+                }
                 if args.perf_counters {
                     report.config.insert(
                         "hardware_counters_scope".into(),
@@ -397,6 +478,7 @@ pub fn run(
                     spell_count(load.rows),
                     spell_value_status(load.status)
                 );
+                eprintln!("{}", spell_faults_and_allocations(&load.client_usage));
                 let loaded = load.status == Status::Completed;
                 failures += usize::from(load.status == Status::Failed);
                 report.load = Some(load);
@@ -428,6 +510,7 @@ pub fn run(
                         result.rows,
                         spell_value_status(result.status)
                     );
+                    eprintln!("{}", spell_faults_and_allocations(&result.client_usage));
                     if let Some(error) = &result.error {
                         if result.status != Status::Unsupported {
                             eprintln!("  {error}");
@@ -457,11 +540,20 @@ fn drop_page_cache() -> Result<()> {
         unsafe {
             libc::sync();
         }
-        std::fs::write("/proc/sys/vm/drop_caches", b"3\n").map_err(|e| format!("--drop-caches: {e}"))
+        std::fs::write("/proc/sys/vm/drop_caches", b"3\n").map_err(|e| format!("--between-runs: {e}"))
     }
     #[cfg(not(target_os = "linux"))]
     {
-        Err("--drop-caches requires Linux".into())
+        Err("--between-runs reopen-and-drop-caches requires Linux".into())
+    }
+}
+
+/// The page faults and counted heap allocations of one phase, as one indented line.
+fn spell_faults_and_allocations(usage: &measure::ResourceUsage) -> String {
+    let faults = format!("  {} minor and {} major faults", usage.minor_faults, usage.major_faults);
+    match (usage.allocations, usage.allocated_bytes) {
+        (Some(allocations), Some(bytes)) => format!("{faults}, {allocations} allocations of {bytes} bytes"),
+        _ => faults,
     }
 }
 
@@ -558,7 +650,10 @@ fn measure_query(
         error: None,
     };
     let mut answer = Answer::default();
-    if args.drop_caches {
+    if args.between_runs != BetweenRuns::Keep {
+        backend.reopen()?;
+    }
+    if args.between_runs == BetweenRuns::ReopenAndDropCaches {
         drop_page_cache()?;
     }
     let sampler = ResourceSampler::start(backend.server_cgroup());
@@ -632,5 +727,7 @@ mod tests {
         assert_eq!(parse_duration("60s"), Some(Duration::from_secs(60)));
         assert_eq!(parse_duration("1.5s"), None);
         assert_eq!(spell_duration(Duration::from_millis(1500)), "1500ms");
+        assert_eq!(parse_size("512MB"), Some(512 << 20));
+        assert_eq!(spell_size(3 << 30), "3GB");
     }
 }

@@ -54,6 +54,14 @@ pub trait Backend {
     fn disk_bytes(&self) -> Result<u64> {
         Ok(0)
     }
+    /// Whether the engine spreads its files over the further `--data-dir` folders the runner mirrors.
+    fn multiple_data_dirs(&self) -> bool {
+        false
+    }
+    /// Closes the engine's storage and opens it again, so the next query starts cold.
+    fn reopen(&mut self) -> Result<()> {
+        Err("this backend supports only --between-runs keep".into())
+    }
     /// A snapshot of the server container's resources; `None` for embedded engines.
     fn server_usage(&self) -> Result<Option<Value>> {
         Ok(None)

@@ -26,52 +26,38 @@ use tableval::{
 struct Cli {
     #[command(flatten)]
     common: CommonArgs,
-    /// Page cache size.
-    #[arg(long, env = "TABLEVAL_CACHE_SIZE", default_value = "1GB", value_parser = parse_cache_size)]
-    cache_size: u64,
-}
-
-fn parse_cache_size(text: &str) -> Result<u64> {
-    let split = text.find(|c: char| !c.is_ascii_digit()).unwrap_or(text.len());
-    let level = ["", "kb", "mb", "gb", "tb"]
-        .iter()
-        .position(|unit| text[split..].eq_ignore_ascii_case(unit));
-    level
-        .and_then(|level| text[..split].parse::<u64>().ok()?.checked_mul(1u64 << (10 * level)))
-        .filter(|&bytes| bytes != 0)
-        .ok_or_else(|| "expected a size like 64MB or 1GB".into())
 }
 
 struct SqliteBackend {
     connection: Connection,
-    cache_size: u64,
     path: std::path::PathBuf,
 }
 
 impl SqliteBackend {
-    fn open(configuration: &Configuration, path: &Path, cache_size: u64) -> Result<Self> {
+    fn open(configuration: &Configuration, path: &Path) -> Result<Self> {
         if configuration.threads.get() != 1 {
             return Err("SQLite runs each query on one thread; pass --threads 1".into());
         }
-        let connection = Connection::open(path.join("tableval.sqlite")).map_err(|e| e.to_string())?;
-        connection
-            .execute_batch(&format!(
-                "PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF; PRAGMA cache_size = -{};",
-                cache_size / 1024
-            ))
-            .map_err(|e| e.to_string())?;
-        // The bundled build leaves out SQLite's math functions, and the Taxi queries floor distances.
-        connection
-            .create_scalar_function("floor", 1, FunctionFlags::SQLITE_DETERMINISTIC, |context| {
-                Ok(context.get::<Option<f64>>(0)?.map(f64::floor))
-            })
-            .map_err(|e| e.to_string())?;
         Ok(Self {
-            connection,
-            cache_size,
+            connection: connect(path)?,
             path: path.to_path_buf(),
         })
     }
+}
+
+/// A connection to the database file with SQLite's shipped page cache.
+fn connect(path: &Path) -> Result<Connection> {
+    let connection = Connection::open(path.join("tableval.sqlite")).map_err(|e| e.to_string())?;
+    connection
+        .execute_batch("PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;")
+        .map_err(|e| e.to_string())?;
+    // The bundled build leaves out SQLite's math functions, and the Taxi queries floor distances.
+    connection
+        .create_scalar_function("floor", 1, FunctionFlags::SQLITE_DETERMINISTIC, |context| {
+            Ok(context.get::<Option<f64>>(0)?.map(f64::floor))
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(connection)
 }
 
 /// Finds `pattern` ignoring ASCII case, from byte `from`.
@@ -135,8 +121,19 @@ impl Backend for SqliteBackend {
             ("backend".into(), json!("sqlite")),
             ("library_version".into(), json!(rusqlite::version())),
             ("threads".into(), json!(1)),
-            ("cache_size".into(), json!(self.cache_size)),
+            (
+                "cache_size".into(),
+                json!(self
+                    .connection
+                    .pragma_query_value(None, "cache_size", |row| row.get::<_, i64>(0))
+                    .ok()),
+            ),
         ])
+    }
+
+    fn reopen(&mut self) -> Result<()> {
+        self.connection = connect(&self.path)?;
+        Ok(())
     }
 
     fn load(&mut self, tables: &[Table], source: Source) -> Result<()> {
@@ -223,18 +220,9 @@ impl Backend for SqliteBackend {
 
 fn main() -> Result<()> {
     let cli: Cli = tableval::parse_cli();
-    let settings = [("Cache size", cli.cache_size.to_string())];
-    run(
-        cli.common,
-        json!({"cache_size": cli.cache_size}),
-        &settings,
-        |configuration, path| {
-            Ok(Box::new_in(
-                SqliteBackend::open(configuration, path, cli.cache_size)?,
-                System,
-            ))
-        },
-    )
+    run(cli.common, json!({}), &[], |configuration, path| {
+        Ok(Box::new_in(SqliteBackend::open(configuration, path)?, System))
+    })
 }
 
 #[cfg(test)]
@@ -265,7 +253,7 @@ mod tests {
             threads: tableval::Threads(std::num::NonZeroUsize::MIN),
             ..*configuration
         };
-        Ok(Box::new_in(SqliteBackend::open(&configuration, path, 1 << 20)?, System))
+        Ok(Box::new_in(SqliteBackend::open(&configuration, path)?, System))
     }
 
     #[test]
