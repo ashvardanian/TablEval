@@ -12,17 +12,13 @@ jobs:
             features: duckdb-backend,datafusion-backend,polars-backend,sqlite-backend,arrow-backend,generate,download,perf-counters
           - name: Server Backends
             features: clickhouse-backend,postgres-backend,generate
+          - name: UStore Documents
+            features: ustore-backend,generate
     steps:
       - name: Check Out Repository
         uses: actions/checkout@v7
       - name: Install Rust 1.100 with Rustfmt and Clippy
-        run: rustup toolchain install beta-2026-10-18 --profile minimal --component rustfmt,clippy
-      - name: Check Formatting
-        run: cargo fmt --all -- --check
-      - name: Set Up uv
-        uses: astral-sh/setup-uv@v6
-      - name: Check Python Plotting
-        run: uvx ruff check --target-version py311 --extend-select I scripts/plot.py && uvx ruff format --check scripts/plot.py
+        run: rustup toolchain install 1.100 --profile minimal --component rustfmt,clippy
       - name: Lint ${{ matrix.name }}
         run: cargo clippy --locked --no-default-features --features '${{ matrix.features }}' --all-targets -- -D warnings
       - name: Test ${{ matrix.name }}

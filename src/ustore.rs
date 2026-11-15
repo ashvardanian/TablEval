@@ -63,8 +63,9 @@ use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchR
 use serde_json::{json, Value};
 use ustore::{
     arrow::ArrowDeviceArray, gpu_devices, Arena, ArrowArray, ArrowArrayStream, Binary, CollectionID, Column,
-    DataDirectory, Database, DocumentEntry, Durability, Executor, GPUDevice, GPUVendor, Gds, IOOptions, IngestOrder,
-    Json, Key, Modality, Modification, NVMEOptions, RocksDBOptions, Snapshot, Text,
+    DataDirectory, Database, DocumentEntry, Durability, Engine, Executor, GPUDevice, GPUVendor, Gds, IOOptions,
+    IngestOrder, Json, Key, LevelDBOptions, Modality, Modification, NVMEOptions, RAMOptions, RocksDBOptions, Snapshot,
+    Text,
 };
 
 use tableval::{
@@ -81,16 +82,6 @@ const BATCH_ROWS: usize = 64 * 1024;
 enum Gather {
     Cpu,
     Gpu,
-}
-
-/// The UStore engine the documents live in, both behind the same C ABI.
-#[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "kebab-case")]
-enum Engine {
-    #[default]
-    Nvme,
-    /// Needs the `ustore-rocksdb` feature, and gathers on the host alone.
-    Rocksdb,
 }
 
 /// In what order a gather reads its keys.
@@ -119,14 +110,17 @@ enum Arenas {
 struct Cli {
     #[command(flatten)]
     common: CommonArgs,
-    /// cpu gathers on the host, gpu on the first device.
+    /// cpu gathers on the host, gpu on the device --devices names.
     #[arg(long, env = "TABLEVAL_GATHER", value_enum, default_value = "cpu")]
     gather: Gather,
+    /// The GPU ordinal a gpu gather runs on, as UStore lists its devices.
+    #[arg(long, env = "TABLEVAL_DEVICES", value_delimiter = ',', default_value = "0")]
+    devices: Vec<usize>,
     /// spread reads keys READ_STRIDE documents apart, sorted reads them as listed, which the engine serves far slower.
     #[arg(long, env = "TABLEVAL_KEY_ORDER", value_enum, default_value_t)]
     key_order: KeyOrder,
-    /// nvme is UStore's own engine; rocksdb serves the same documents and verbs through RocksDB.
-    #[arg(long, env = "TABLEVAL_ENGINE", value_enum, default_value_t)]
+    /// nvme is UStore's own engine; ram, leveldb and rocksdb serve the same documents and verbs through theirs.
+    #[arg(long, env = "TABLEVAL_ENGINE", default_value = "nvme", value_parser = |text: &str| text.parse::<Engine>())]
     engine: Engine,
     /// Gather this share of the keys, a fraction over zero and at most one, as a labelled measurement apart from exact
     /// runs; digests are skipped, and reports land in a `sampled` folder under --output.
@@ -145,11 +139,17 @@ struct Cli {
 #[derive(Clone, Copy, serde::Serialize)]
 struct Settings {
     gather: Gather,
+    device: usize,
     sample_rate: Option<f64>,
     key_order: KeyOrder,
+    #[serde(serialize_with = "spell_engine")]
     engine: Engine,
     arena: Arenas,
     ingest_during_queries: bool,
+}
+
+fn spell_engine<S: serde::Serializer>(engine: &Engine, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    serializer.collect_str(engine)
 }
 
 fn parse_sample_rate(text: &str) -> Result<f64> {
@@ -632,37 +632,49 @@ fn open_database(engine: Engine, path: &Path, further: &[PathBuf], opening: Opti
         .collect::<Option<Vec<_>>>()
         .ok_or("a data directory is not UTF-8")?;
     match engine {
-        Engine::Nvme => Database::open_nvme(&NVMEOptions {
+        Engine::NVME => Database::open_nvme(&NVMEOptions {
             data_directories: &data_directories,
             executor: opening,
             memory_limit: output::budget().memory_limit,
             ..NVMEOptions::at(manifest)
         }),
-        Engine::Rocksdb => Database::open_rocksdb(&RocksDBOptions {
+        Engine::RocksDB => Database::open_rocksdb(&RocksDBOptions {
             data_directories: &data_directories,
             ..RocksDBOptions::at(directory)
         }),
+        Engine::RAM | Engine::LevelDB if !further.is_empty() => {
+            return Err(format!("--engine {engine} keeps its files in one data directory"));
+        }
+        Engine::RAM => Database::open_ram(directory, &RAMOptions::default()),
+        Engine::LevelDB => Database::open_leveldb(&LevelDBOptions::at(directory)),
     }
     .map_err(|e| e.to_string())
 }
 
 impl UstoreBackend {
     fn open(configuration: &Configuration, path: &Path, further: Vec<PathBuf>, settings: Settings) -> Result<Self> {
-        if settings.engine == Engine::Rocksdb && settings.gather == Gather::Gpu {
-            return Err("--gather gpu needs --engine nvme, as RocksDB gathers on the host alone".into());
+        if matches!(settings.engine, Engine::RocksDB | Engine::LevelDB) && settings.gather == Gather::Gpu {
+            return Err(format!(
+                "--gather gpu needs --engine nvme or ram, as {} gathers on the host alone",
+                settings.engine
+            ));
         }
-        if settings.ingest_during_queries && (settings.engine != Engine::Nvme || settings.sample_rate.is_some()) {
+        if settings.ingest_during_queries && (settings.engine != Engine::NVME || settings.sample_rate.is_some()) {
             return Err("--ingest-during-queries needs --engine nvme and no --sample-rate".into());
         }
         // Each lane pins a snapshot of its own, so an ingest racing the gathers keeps to one.
-        let lanes_count = match settings.engine == Engine::Nvme && !settings.ingest_during_queries {
+        let lanes_count = match settings.engine == Engine::NVME && !settings.ingest_during_queries {
             true => configuration.threads.get(),
             false => 1,
         };
         let ring = || Arc::new(ArenaRing::new(settings.arena));
         let (lanes, lane_threads, device, opening) = match settings.gather {
             Gather::Gpu => {
-                let device = first_device()?.ok_or("--gather gpu found no device")?;
+                let device = gpu_devices()
+                    .map_err(|e| e.to_string())?
+                    .into_iter()
+                    .find(|device| device.ordinal == settings.device)
+                    .ok_or("--devices names no device")?;
                 if device.vendor != GPUVendor::Nvidia {
                     return Err("--gather gpu reads columns back through the CUDA driver alone".into());
                 }
@@ -1101,7 +1113,7 @@ impl Backend for UstoreBackend {
         BTreeMap::from([
             ("backend".into(), json!(backend)),
             ("library_version".into(), json!(ustore::version())),
-            ("engine".into(), json!(self.settings.engine)),
+            ("engine".into(), json!(self.settings.engine.to_string())),
             ("threads".into(), json!(self.folds.threads_count())),
             (
                 "gather".into(),
@@ -1140,7 +1152,7 @@ impl Backend for UstoreBackend {
                 .map_err(|e| e.to_string())?;
             self.check_kernels(collection)?;
             let rows = match self.settings.engine {
-                Engine::Nvme => {
+                Engine::NVME | Engine::RAM => {
                     let stream = stream_of(document_batches(table)?);
                     database
                         .collection(&table.name)
@@ -1149,8 +1161,8 @@ impl Backend for UstoreBackend {
                         })
                         .map_err(|e| format!("{}: {e}", table.name))?
                 }
-                // RocksDB serves no ingest, so the same documents land through batched writes.
-                Engine::Rocksdb => self.write_documents(collection, table)?,
+                // RocksDB and LevelDB serve no ingest, so the same documents land through batched writes.
+                Engine::RocksDB | Engine::LevelDB => self.write_documents(collection, table)?,
             };
             self.tables.insert(
                 table.name.clone(),
@@ -1224,14 +1236,12 @@ impl Backend for UstoreBackend {
     }
 }
 
-fn first_device() -> Result<Option<GPUDevice>> {
-    let devices = gpu_devices().map_err(|e| e.to_string())?;
-    Ok(devices.into_iter().next())
-}
-
 fn main() -> Result<()> {
     let mut cli: Cli = tableval::parse_cli();
     let gather = cli.gather;
+    let [device] = cli.devices[..] else {
+        return Err("--devices takes one ordinal, as one executor gathers".into());
+    };
     if cli.sample_rate.is_some() {
         cli.common.verify = Verify::None;
         cli.common.output = cli.common.output.join("sampled");
@@ -1242,6 +1252,7 @@ fn main() -> Result<()> {
     }
     let settings = Settings {
         gather,
+        device,
         sample_rate: cli.sample_rate,
         key_order: cli.key_order,
         engine: cli.engine,
@@ -1255,7 +1266,7 @@ fn main() -> Result<()> {
         ("Gather", tableval::spell_value(&gather)),
         ("Sample rate", spelled_rate),
         ("Key order", tableval::spell_value(&settings.key_order)),
-        ("Engine", tableval::spell_value(&settings.engine)),
+        ("Engine", settings.engine.to_string()),
         ("Arena", tableval::spell_value(&settings.arena)),
         ("Ingest during queries", settings.ingest_during_queries.to_string()),
     ];
@@ -1275,9 +1286,10 @@ mod tests {
     fn settings(gather: Gather, sample_rate: Option<f64>, key_order: KeyOrder) -> Settings {
         Settings {
             gather,
+            device: 0,
             sample_rate,
             key_order,
-            engine: Engine::Nvme,
+            engine: Engine::NVME,
             arena: Arenas::Ring,
             ingest_during_queries: false,
         }

@@ -3,6 +3,7 @@ name = "tableval"
 version = "1.0.0-rc.1"
 license = "Apache-2.0"
 edition = "2021"
+rust-version = "1.100"
 description = "Tabular analytics benchmarks for embedded engines, servers and GPUs"
 repository = "https://github.com/ashvardanian/TablEval"
 
@@ -74,7 +75,11 @@ libc = "0.2"
 parquet = { version = "60", default-features = false, features = ["arrow", "snap", "zstd"] }
 arrow = { version = "60", default-features = false, features = ["ffi"] }
 forkunion = { version = "4.0.0-rc.1", git = "https://github.com/ashvardanian/ForkUnion", optional = true }
-ustore = { version = "1.0.0-rc.1", git = "https://github.com/unum-cloud/UStore", optional = true, default-features = false, features = ["nvme"] }
+ustore = { version = "1.0.0-rc.1", git = "https://github.com/unum-cloud/UStore", optional = true, default-features = false, features = [
+    "leveldb",
+    "nvme",
+    "rocksdb",
+] }
 duckdb = { version = "1", optional = true, features = ["bundled", "parquet"] }
 polars = { version = "0.55", optional = true, default-features = false, features = [
     "lazy",
@@ -109,8 +114,6 @@ polars-backend = ["dep:polars"]
 sqlite-backend = ["dep:rusqlite"]
 arrow-backend = ["dep:forkunion"]
 ustore-backend = ["dep:ustore", "dep:forkunion"]
-# The RocksDB engine behind the same C ABI, for `tabl-eval-ustore --engine rocksdb`.
-ustore-rocksdb = ["ustore-backend", "ustore/rocksdb"]
 tier2 = []
 clickhouse-backend = ["tier2", "dep:ureq"]
 postgres-backend = ["tier2", "dep:postgres"]

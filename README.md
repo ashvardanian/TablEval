@@ -187,11 +187,13 @@ tabl-eval-*
 ```text
 tabl-eval-ustore
   --gather <DEVICE>                     cpu
-      cpu gathers on the host, gpu on the first device.
+      cpu gathers on the host, gpu on the device --devices names.
+  --devices <ORDINAL>                   0
+      The GPU ordinal a gpu gather runs on, as UStore lists its devices.
   --key-order <ORDER>                   spread
       spread reads keys 256 documents apart, sorted reads them as listed.
   --engine <ENGINE>                     nvme
-      nvme is UStore's own engine; rocksdb serves the same verbs through RocksDB.
+      nvme is UStore's own engine; ram, leveldb and rocksdb serve the same verbs through theirs.
   --sample-rate <FRACTION>              none
       Gather this share of the keys as a separate, labelled measurement.
   --arena <POLICY>                      ring
@@ -275,8 +277,8 @@ Directory guides describe [source contracts](src/README.md), [datasets](data/REA
 
 ## Development
 
-The repository pins Rust 1.100, as `beta-2026-10-18` until its stable release.
-CI runs `cargo fmt --check`, Ruff on the plotting script, then `cargo clippy` and `cargo test` per feature group; a manually dispatched workflow checks cuDF on a CUDA worker.
+The repository pins Rust 1.100.
+CI runs `cargo clippy` and `cargo test` per feature group, and a manually dispatched workflow checks cuDF on a CUDA worker; the pre-commit hook runs rustfmt and Ruff where they are installed.
 Every backend's tests load the four-trip Taxi fixture and, with the `generate` feature, TPC-H at scale 0.01 generated in-process, and check each query the backend supports against the pinned answers.
 The Arrow baseline and the generator depend on ForkUnion 4, which a local `.cargo/config.toml` may point at a sibling checkout until it is published.
 Arm the hooks once per clone with `git config core.hooksPath .githooks`.

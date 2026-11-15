@@ -1215,6 +1215,8 @@ dependencies = [
 [[package]]
 name = "cudf"
 version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "770f0b1d75de86c64e6ab398e1cd70d6ebd54c7d24d481508f7a8bba9e7db731"
 dependencies = [
  "cudf-cxx",
  "cxx",
@@ -1224,6 +1226,8 @@ dependencies = [
 [[package]]
 name = "cudf-cxx"
 version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78beb9f15ed16cc31fb2cc205e2086383d4c10e77c1c15e69aabe5747c21a9da"
 dependencies = [
  "cudf-sys",
  "cxx",
@@ -1233,6 +1237,8 @@ dependencies = [
 [[package]]
 name = "cudf-sys"
 version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac2ed616129614dd8c0ad6b447603fe5f82c3312c019f6d5ccb43cb7f36387e7"
 dependencies = [
  "pkg-config",
 ]
@@ -2198,6 +2204,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 [[package]]
 name = "forkunion"
 version = "4.0.0-rc.1"
+source = "git+https://github.com/ashvardanian/ForkUnion#ce67be6511ce8cfc4b139b3e7266ec0e5edc372c"
 dependencies = [
  "cmake",
 ]
@@ -4781,6 +4788,7 @@ checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
 [[package]]
 name = "smashtable"
 version = "1.0.0-rc.1"
+source = "git+https://github.com/ashvardanian/SmashTable#30e349dcd1e582896386d959d4a36badce061787"
 
 [[package]]
 name = "snap"
@@ -4899,6 +4907,7 @@ dependencies = [
 [[package]]
 name = "stringzilla"
 version = "6.0.0-rc.1"
+source = "git+https://github.com/ashvardanian/StringZilla#ff22abca2e1f271f37bd8cb10174bc9dd37ed4e7"
 dependencies = [
  "cmake",
 ]
@@ -5421,6 +5430,7 @@ dependencies = [
 [[package]]
 name = "ustore"
 version = "1.0.0-rc.1"
+source = "git+https://github.com/unum-cloud/UStore#507a45e60bc0a80e90e53b5817607446736f83f1"
 dependencies = [
  "cmake",
  "forkunion",

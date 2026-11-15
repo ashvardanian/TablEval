@@ -13,7 +13,7 @@
 use std::{path::PathBuf, sync::Mutex};
 
 use clap::Parser;
-use forkunion::{ThreadPool, Topology};
+use forkunion as fu;
 
 use tableval::{parse_threads_flag, suite::TPCH_TABLES, tpch::write_part, Result, Threads};
 
@@ -57,8 +57,8 @@ fn main() -> Result<()> {
     eprintln!("- Output: {}", folder.display());
     eprintln!("- Threads: {}", cli.threads);
     eprintln!("- Parts: {}", jobs.len());
-    let mut pool = Topology::new()
-        .and_then(|topology| ThreadPool::spawn(&topology, cli.threads.get()))
+    let mut pool = fu::Topology::new()
+        .and_then(|topology| fu::ThreadPool::spawn(&topology, cli.threads.get()))
         .map_err(|e| format!("ForkUnion: {e:?}"))?;
     let failures = Mutex::new(Vec::new());
     pool.for_n_dynamic(jobs.len(), |job, _at| {
