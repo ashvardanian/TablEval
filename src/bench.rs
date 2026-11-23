@@ -46,7 +46,7 @@ const REPORT_SCHEMA_VERSION: u32 = 1;
 pub enum BetweenRuns {
     Keep,
     Reopen,
-    /// Reopen and drop the host page cache; Linux as root only.
+    /// Reopen and drop the host page cache; Linux, as root or through passwordless sudo.
     ReopenAndDropCaches,
 }
 
@@ -62,16 +62,22 @@ pub enum Verify {
 
 #[derive(Args, Clone, Debug, serde::Serialize)]
 pub struct CommonArgs {
-    /// Dataset folder of `<table>.part_NNN.parquet` files; its tables pick the suite.
+    /// Dataset folder of `<table>.part_NNN.parquet` files, whose tables pick the suite, or of the key draws
+    /// `tabl-draw-keys` wrote for `--suite documents`.
     #[arg(long, env = "TABLEVAL_DATASET")]
     pub dataset: PathBuf,
+    /// documents runs the documents suite over stored documents; taxi, tpch and clickbench check the suite the
+    /// dataset folder's tables pick.
+    #[arg(long, env = "TABLEVAL_SUITE", value_enum)]
+    pub suite: Option<Suite>,
     /// Fact-table row prefixes in whole parts, with decimal K, M, G or T; all rows when unset; a sweep.
     #[arg(long, env = "TABLEVAL_ROWS", value_delimiter = ',', value_parser = parse_count_flag)]
     pub rows: Vec<u64>,
     /// Engine threads, 0 for every core in the affinity mask; a sweep.
     #[arg(long, env = "TABLEVAL_THREADS", value_delimiter = ',', default_value = "0", value_parser = parse_threads_flag)]
     pub threads: Vec<Threads>,
-    /// loaded ingests the parts first, parquet queries them in place; a sweep.
+    /// loaded ingests the parts first, parquet queries them in place, stored opens the stores --data-dir names; a
+    /// sweep.
     #[arg(
         long,
         env = "TABLEVAL_SOURCE",
@@ -93,7 +99,8 @@ pub struct CommonArgs {
     #[arg(long, env = "TABLEVAL_VERIFY", value_enum, default_value = "answers")]
     pub verify: Verify,
     /// Parent directories for the engines' own storage, one per drive: one marked folder per configuration in the
-    /// first, mirrored in each further one for engines that spread their files.
+    /// first, mirrored in each further one for engines that spread their files; with --source stored, the stores
+    /// themselves, as each backend names them.
     #[arg(long, env = "TABLEVAL_DATA_DIR", value_delimiter = ',', default_value = "data")]
     pub data_dir: Vec<PathBuf>,
     /// Directory for JSON reports.
@@ -111,8 +118,12 @@ pub struct CommonArgs {
 }
 
 impl CommonArgs {
-    /// The configuration folder at `path` mirrored under every `--data-dir` after the first.
+    /// The configuration folder at `path` mirrored under every `--data-dir` after the first, or those folders
+    /// themselves when `path` is the first, as a stored source opens it.
     pub fn further_data_dirs(&self, path: &Path) -> Vec<PathBuf> {
+        if path == self.data_dir[0] {
+            return self.data_dir[1..].to_vec();
+        }
         let name = path.file_name().unwrap_or_default();
         self.data_dir[1..].iter().map(|parent| parent.join(name)).collect()
     }
@@ -309,9 +320,30 @@ pub fn run(
         return Err("--between-runs reopen-and-drop-caches requires Linux".into());
     }
     let backend_options = serde_json::to_value(backend_options).map_err(|e| e.to_string())?;
-    let dataset = Dataset::open(&args.dataset)?;
-    if dataset.suite == Suite::Tpch && !args.rows.is_empty() {
-        return Err("TPC-H scales by folder, such as data/tpch-sf10, so --rows does not apply".into());
+    let dataset = match args.suite {
+        Some(Suite::Documents) => Dataset::open_documents(&args.dataset)?,
+        _ => Dataset::open(&args.dataset)?,
+    };
+    if let Some(suite) = args.suite.filter(|&suite| suite != dataset.suite) {
+        return Err(format!(
+            "--suite {} does not match the {} tables of {}",
+            spell_value(&suite),
+            spell_value(&dataset.suite),
+            args.dataset.display()
+        ));
+    }
+    match dataset.suite {
+        Suite::Tpch if !args.rows.is_empty() => {
+            return Err("TPC-H scales by folder, such as data/tpch-sf10, so --rows does not apply".into())
+        }
+        Suite::Documents if !args.rows.is_empty() => {
+            return Err("the documents suite counts its keys per query, so --rows does not apply".into())
+        }
+        Suite::Documents => {}
+        _ if args.source.contains(&Source::Stored) => {
+            return Err("--source stored opens the stores of --suite documents".into())
+        }
+        _ => {}
     }
     let queries = match args.queries.is_empty() {
         true => dataset.queries.clone(),
@@ -396,11 +428,15 @@ pub fn run(
     let mut last_report = None;
     for &rows in &rows_sweep {
         let tables = dataset.tables(rows)?;
-        let fact = tables
-            .iter()
-            .find(|table| table.name == dataset.suite.fact_table())
-            .ok_or("the dataset lost its fact table")?;
-        let (fact_rows, total_bytes) = (fact.rows, tables.iter().map(|table| table.bytes).sum::<u64>());
+        let fact_rows = match dataset.suite {
+            // Every partition of the documents suite is a table of its own
+            Suite::Documents => tables.iter().map(|table| table.rows).sum(),
+            suite => {
+                let fact = tables.iter().find(|table| table.name == suite.fact_table());
+                fact.ok_or("the dataset lost its fact table")?.rows
+            }
+        };
+        let total_bytes = tables.iter().map(|table| table.bytes).sum::<u64>();
         for &threads in &args.threads {
             for &source in &args.source {
                 let configuration = Configuration { rows, threads, source };
@@ -409,9 +445,16 @@ pub fn run(
                 workload.threads = vec![threads];
                 workload.source = vec![source];
                 let identity = output::config_hash(&(&args.dataset, rows, threads, source, &backend_options))?;
-                let path = args.data_dir[0].join(format!("{engine}-{identity}"));
+                // A stored source opens the stores themselves, so nothing there is made or removed
+                let path = match source {
+                    Source::Stored => args.data_dir[0].clone(),
+                    _ => args.data_dir[0].join(format!("{engine}-{identity}")),
+                };
                 let further = args.further_data_dirs(&path);
-                for folder in std::iter::once(&path).chain(&further) {
+                for folder in std::iter::once(&path)
+                    .chain(&further)
+                    .filter(|_| source != Source::Stored)
+                {
                     if folder.exists() {
                         std::fs::remove_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
                     }
@@ -540,7 +583,18 @@ fn drop_page_cache() -> Result<()> {
         unsafe {
             libc::sync();
         }
-        std::fs::write("/proc/sys/vm/drop_caches", b"3\n").map_err(|e| format!("--between-runs: {e}"))
+        if std::fs::write("/proc/sys/vm/drop_caches", b"3\n").is_ok() {
+            return Ok(());
+        }
+        // An unprivileged run drops through passwordless sudo, and fails rather than waits for a password
+        let dropped = std::process::Command::new("sudo")
+            .args(["-n", "sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"])
+            .status()
+            .map_err(|e| format!("--between-runs: {e}"))?;
+        match dropped.success() {
+            true => Ok(()),
+            false => Err("--between-runs: dropping the page cache needs root or passwordless sudo".into()),
+        }
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -609,9 +663,10 @@ fn measure_load(
     let elapsed_seconds = start.elapsed().as_secs_f64();
     let hardware_counters = read_counters(counters)?;
     let sampled = sampler.stop()?;
-    let (status, error) = match loaded {
-        Ok(()) => (Status::Completed, None),
-        Err(error) => (status_of(&error), Some(error)),
+    // A failed load may leave no storage to measure, so its own error is the one reported
+    let (status, error, disk_bytes) = match loaded {
+        Ok(()) => (Status::Completed, None, backend.disk_bytes()?),
+        Err(error) => (status_of(&error), Some(error), 0),
     };
     Ok(PhaseReport {
         status,
@@ -622,7 +677,7 @@ fn measure_load(
         client_usage: sampled.client,
         server_usage: server_usage(backend, sampled.server)?,
         hardware_counters,
-        disk_bytes: backend.disk_bytes()?,
+        disk_bytes,
         error,
     })
 }

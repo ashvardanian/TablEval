@@ -46,6 +46,11 @@ path = "src/clickhouse.rs"
 required-features = ["clickhouse-backend"]
 
 [[bin]]
+name = "tabl-eval-mongodb"
+path = "src/mongodb.rs"
+required-features = ["mongodb-backend"]
+
+[[bin]]
 name = "tabl-eval-postgres"
 path = "src/postgres.rs"
 required-features = ["postgres-backend"]
@@ -65,6 +70,10 @@ name = "tabl-download"
 path = "scripts/download.rs"
 required-features = ["download"]
 
+[[bin]]
+name = "tabl-draw-keys"
+path = "scripts/draw_keys.rs"
+
 [dependencies]
 clap = { version = "4.6", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
@@ -73,7 +82,7 @@ glob = "0.3"
 sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
 libc = "0.2"
 parquet = { version = "60", default-features = false, features = ["arrow", "snap", "zstd"] }
-arrow = { version = "60", default-features = false, features = ["ffi"] }
+arrow = { version = "60", default-features = false, features = ["ffi", "ipc"] }
 forkunion = { version = "4.0.0-rc.1", git = "https://github.com/ashvardanian/ForkUnion", optional = true }
 ustore = { version = "1.0.0-rc.1", git = "https://github.com/unum-cloud/UStore", optional = true, default-features = false, features = [
     "leveldb",
@@ -95,6 +104,8 @@ datafusion-arrow = { package = "arrow", version = "59", optional = true, default
 tokio = { version = "1", optional = true, features = ["rt-multi-thread"] }
 rusqlite = { version = "0.41", optional = true, features = ["bundled", "functions"] }
 postgres = { version = "0.19", optional = true }
+mongodb = { version = "3.9", optional = true, features = ["sync"] }
+tempfile = { version = "3", optional = true }
 ureq = { version = "3", optional = true, default-features = false }
 cudf = { version = "0.3", optional = true, default-features = false }
 tpchgen = { version = "4", optional = true }
@@ -113,10 +124,11 @@ datafusion-backend = ["dep:datafusion", "dep:datafusion-arrow", "dep:tokio"]
 polars-backend = ["dep:polars"]
 sqlite-backend = ["dep:rusqlite"]
 arrow-backend = ["dep:forkunion"]
-ustore-backend = ["dep:ustore", "dep:forkunion"]
+ustore-backend = ["dep:ustore", "dep:forkunion", "arrow/json"]
 tier2 = []
-clickhouse-backend = ["tier2", "dep:ureq"]
+clickhouse-backend = ["tier2", "dep:ureq", "dep:tempfile"]
 postgres-backend = ["tier2", "dep:postgres"]
+mongodb-backend = ["dep:mongodb", "dep:tempfile"]
 cudf-backend = ["dep:cudf"]
 generate = ["dep:tpchgen", "dep:tpchgen-arrow", "dep:forkunion"]
 download = ["dep:ureq", "ureq/rustls"]

@@ -10,7 +10,7 @@ The shared runner and its contracts live in:
 
 - [`bench.rs`](bench.rs): `CommonArgs`, the sweep over rows, threads and sources, cold and hot runs, what happens between them, and count, duration and size parsing.
 - [`backend.rs`](backend.rs): the `Backend` trait with its `reopen` for `--between-runs`, `Table`, `Source`, `Executed` and the `unsupported` error convention.
-- [`suite.rs`](suite.rs): the Taxi, TPC-H and ClickBench query catalogs, dataset discovery from Parquet footers, row prefixes and pinned TPC-H answers.
+- [`suite.rs`](suite.rs): the Taxi, TPC-H and ClickBench query catalogs, dataset discovery from Parquet footers, row prefixes and pinned TPC-H answers, and the documents suite: its collections' scalar fields, its workloads, and the key draws every backend reads.
 - [`answer.rs`](answer.rs): canonical result rows and their order-independent digest, plus the Arrow C Data Interface import other Arrow majors cross through.
 
 Measurement and infrastructure are split into:
@@ -29,10 +29,10 @@ Each backend has its own binary:
 - Embedded engines: [`duckdb.rs`](duckdb.rs), [`datafusion.rs`](datafusion.rs), [`polars.rs`](polars.rs) and [`sqlite.rs`](sqlite.rs).
 - The hand-written baseline: [`arrow.rs`](arrow.rs).
 - Documents gathered into Arrow columns, on the host or a GPU: [`ustore.rs`](ustore.rs).
-- Database servers: [`clickhouse.rs`](clickhouse.rs) and [`postgres.rs`](postgres.rs).
+- Database servers: [`clickhouse.rs`](clickhouse.rs), [`postgres.rs`](postgres.rs) and, for the documents suite alone, [`mongodb.rs`](mongodb.rs).
 - GPU: [`cudf.rs`](cudf.rs).
 
-[`generate.rs`](generate.rs) builds `tabl-generate` for TPC-H, in parallel over `tpch.rs`, and [`../scripts/download.rs`](../scripts/download.rs) builds `tabl-download` for Taxi and ClickBench.
+[`generate.rs`](generate.rs) builds `tabl-generate` for TPC-H, in parallel over `tpch.rs`, [`../scripts/download.rs`](../scripts/download.rs) builds `tabl-download` for Taxi and ClickBench, and [`../scripts/draw_keys.rs`](../scripts/draw_keys.rs) builds `tabl-draw-keys` for the documents suite.
 
 ## Vocabulary & Contracts
 
@@ -40,6 +40,10 @@ A `Backend` is opened once per configuration, with the run's own folder under `-
 `load` receives every table with its parts already cut to the configuration's rows, and either ingests them, for `Source::Loaded`, or registers them in place, for `Source::Parquet`.
 `run` executes one query, materializes its result inside the timed region, and only then fills the `Answer`.
 `Executed` carries that engine time; parsing the result into the `Answer` is never timed.
+
+`Source::Stored` loads nothing: `load` opens the stores already in the `--data-dir` folders, which the runner neither makes nor clears, one partition table each.
+A documents query carries its workload, its key draw and its fields in `Query::documents`, and answers one batch per window, the 16-byte key first and the cells after, so `Answer::push_batches` digests every system alike.
+The backend reads the draw before its timer starts and checks each partition's rows after it stops.
 
 An error starting with `unsupported` marks a query or source the engine cannot express; the runner records it as `unsupported` and moves on.
 Any other error is `failed`, and the run exits nonzero after finishing the remaining queries.
@@ -59,4 +63,5 @@ Each backend's `taxi_fixture` test writes the four-trip table, loads it from eve
 With the `generate` feature, its `tpch_answers` test generates TPC-H at scale 0.01 the same way and checks every query the backend supports against the pinned answers, listing all failures and mismatches at once.
 The server tests are `#[ignore]`d, since they need Docker, and `scripts/check-servers.sh` runs them; the cuDF tests and UStore's `#[ignore]`d `taxi_fixture_on_device` need a CUDA device.
 `answer.rs` pins the canonicalization: numbers across types and rounding, timestamps, row order, and nulls apart from the text `null`.
-`sqlite.rs` pins its dialect rewrites, and `suite.rs` parses a pinned TPC-H answer.
+`sqlite.rs` pins its dialect rewrites, and `suite.rs` parses a pinned TPC-H answer, repeats a key draw, and digests documents alike across Arrow types and row orders.
+`clickhouse.rs` pins the documents statements it sends.

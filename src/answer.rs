@@ -7,9 +7,10 @@
 //! so queries without a total `ORDER BY` still compare.
 
 use arrow::{
-    array::{Array, RecordBatch},
+    array::{Array, ArrayAccessor, ArrayRef, AsArray, Float64Array, RecordBatch},
     compute::cast,
-    datatypes::DataType,
+    datatypes::{DataType, Float64Type},
+    error::ArrowError,
     util::display::{ArrayFormatter, FormatOptions},
 };
 
@@ -20,6 +21,18 @@ const SIGNIFICANT_DIGITS: usize = 8;
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0100_0000_01b3;
+
+/// The two lowercase hex digits of every byte, as Arrow's formatter prints binary cells.
+const HEX_PAIRS: [[u8; 2]; 256] = {
+    let digits = b"0123456789abcdef";
+    let mut pairs = [[0; 2]; 256];
+    let mut byte = 0;
+    while byte < 256 {
+        pairs[byte] = [digits[byte >> 4], digits[byte & 0xf]];
+        byte += 1;
+    }
+    pairs
+};
 
 fn fnv(hash: u64, bytes: &[u8]) -> u64 {
     bytes
@@ -121,40 +134,58 @@ impl Answer {
         answer
     }
 
-    /// Appends Arrow result batches; numeric columns are cast to `f64`, others go through Arrow's formatter.
+    /// Appends Arrow result batches; numeric columns are cast to `f64`, strings and binary hex are pushed as
+    /// Arrow's formatter would print them, and other columns go through that formatter.
     pub fn push_batches(&mut self, batches: &[RecordBatch]) -> Result<()> {
+        use std::fmt::Write as _;
+
         let options = FormatOptions::default();
+        let mut text = String::new();
         for batch in batches {
-            let mut columns = Vec::with_capacity(batch.num_columns());
-            for column in batch.columns() {
-                let data_type = column.data_type();
-                let numeric = data_type.is_numeric() || *data_type == DataType::Boolean;
-                columns.push(match numeric {
-                    true => Column::Number(cast(column, &DataType::Float64).map_err(|e| e.to_string())?),
-                    false => Column::Text(column.clone()),
-                });
-            }
-            let formatters = columns
+            let casts = batch
+                .columns()
                 .iter()
-                .map(|column| match column {
-                    Column::Number(_) => Ok(None),
-                    Column::Text(array) => ArrayFormatter::try_new(array.as_ref(), &options).map(Some),
+                .map(|column| {
+                    let data_type = column.data_type();
+                    match data_type.is_numeric() || *data_type == DataType::Boolean {
+                        true => cast(column, &DataType::Float64).map(Some),
+                        false => Ok(None),
+                    }
                 })
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(|e| e.to_string())?;
+            let sources: Vec<&ArrayRef> = batch
+                .columns()
+                .iter()
+                .zip(&casts)
+                .map(|(column, cast)| cast.as_ref().unwrap_or(column))
+                .collect();
+            let columns = sources
+                .iter()
+                .map(|source| Column::new(source, &options))
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
             for row in 0..batch.num_rows() {
-                for (column, formatter) in columns.iter().zip(&formatters) {
+                for (source, column) in sources.iter().zip(&columns) {
+                    if source.is_null(row) {
+                        self.push_null();
+                        continue;
+                    }
                     match column {
-                        Column::Number(array) if array.is_null(row) => self.push_null(),
-                        Column::Number(array) => self.push_f64(
-                            array
-                                .as_any()
-                                .downcast_ref::<arrow::array::Float64Array>()
-                                .unwrap()
-                                .value(row),
-                        ),
-                        Column::Text(array) if array.is_null(row) => self.push_null(),
-                        Column::Text(_) => self.push_str(&formatter.as_ref().unwrap().value(row).to_string()),
+                        Column::Number(array) => self.push_f64(array.value(row)),
+                        Column::Text(array) => self.push_str(array.value(row)),
+                        Column::Bytes(array) => {
+                            text.clear();
+                            for &byte in array.value(row) {
+                                text.extend(HEX_PAIRS[usize::from(byte)].map(char::from));
+                            }
+                            self.push_str(&text);
+                        }
+                        Column::Formatted(formatter) => {
+                            text.clear();
+                            let _ = write!(text, "{}", formatter.value(row));
+                            self.push_str(&text);
+                        }
                     }
                 }
                 self.end_row();
@@ -164,9 +195,29 @@ impl Answer {
     }
 }
 
-enum Column {
-    Number(arrow::array::ArrayRef),
-    Text(arrow::array::ArrayRef),
+/// A batch column typed once, so that strings and binary cells skip Arrow's per-cell formatter.
+enum Column<'a> {
+    Number(&'a Float64Array),
+    Text(Box<dyn ArrayAccessor<Item = &'a str> + 'a>),
+    Bytes(Box<dyn ArrayAccessor<Item = &'a [u8]> + 'a>),
+    Formatted(ArrayFormatter<'a>),
+}
+
+impl<'a> Column<'a> {
+    /// Numeric columns arrive here already cast to `Float64`, so no other column type takes that arm.
+    fn new(array: &'a ArrayRef, options: &FormatOptions<'a>) -> std::result::Result<Self, ArrowError> {
+        Ok(match array.data_type() {
+            DataType::Float64 => Self::Number(array.as_primitive::<Float64Type>()),
+            DataType::Utf8 => Self::Text(Box::new(array.as_string::<i32>())),
+            DataType::LargeUtf8 => Self::Text(Box::new(array.as_string::<i64>())),
+            DataType::Utf8View => Self::Text(Box::new(array.as_string_view())),
+            DataType::Binary => Self::Bytes(Box::new(array.as_binary::<i32>())),
+            DataType::LargeBinary => Self::Bytes(Box::new(array.as_binary::<i64>())),
+            DataType::BinaryView => Self::Bytes(Box::new(array.as_binary_view())),
+            DataType::FixedSizeBinary(_) => Self::Bytes(Box::new(array.as_fixed_size_binary())),
+            _ => Self::Formatted(ArrayFormatter::try_new(array.as_ref(), options)?),
+        })
+    }
 }
 
 /// Moves an array from another arrow-rs major into this crate's through the Arrow C Data Interface, zero-copy.
@@ -184,7 +235,148 @@ pub unsafe fn import_array(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use arrow::{
+        array::{
+            BinaryArray, BinaryViewArray, Date32Array, DictionaryArray, FixedSizeBinaryArray, Int64Array,
+            LargeBinaryArray, LargeStringArray, StringArray, StringViewArray, TimestampMillisecondArray,
+        },
+        datatypes::Int32Type,
+    };
+
     use super::*;
+
+    /// The formatter path `push_batches` replaced, kept as the reference its row hashes must match.
+    fn push_batches_through_formatter(answer: &mut Answer, batches: &[RecordBatch]) {
+        let options = FormatOptions::default();
+        for batch in batches {
+            let columns: Vec<ArrayRef> = batch
+                .columns()
+                .iter()
+                .map(|column| {
+                    let data_type = column.data_type();
+                    match data_type.is_numeric() || *data_type == DataType::Boolean {
+                        true => cast(column, &DataType::Float64).unwrap(),
+                        false => column.clone(),
+                    }
+                })
+                .collect();
+            let formatters: Vec<ArrayFormatter> = columns
+                .iter()
+                .map(|column| ArrayFormatter::try_new(column.as_ref(), &options).unwrap())
+                .collect();
+            for row in 0..batch.num_rows() {
+                for (column, formatter) in columns.iter().zip(&formatters) {
+                    match column.as_primitive_opt::<Float64Type>() {
+                        _ if column.is_null(row) => answer.push_null(),
+                        Some(numbers) => answer.push_f64(numbers.value(row)),
+                        None => answer.push_str(&formatter.value(row).to_string()),
+                    }
+                }
+                answer.end_row();
+            }
+        }
+    }
+
+    /// A xorshift stream, so the random arrays repeat from run to run.
+    struct Draws(u64);
+
+    impl Draws {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn below(&mut self, bound: u64) -> usize {
+            (self.next() % bound) as usize
+        }
+    }
+
+    /// Text that `push_str` reads as a number, as a timestamp, or as plain bytes.
+    fn random_text(draws: &mut Draws) -> String {
+        const PIECES: [&str; 10] = ["0", "7", "e", "-", ".", " ", "T", ":", "\u{e9}", "x"];
+        match draws.below(4) {
+            0 => format!("{}", (draws.next() >> 20) as f64 / 1000.0),
+            1 => format!(
+                "2013-07-{:02}T12:34:{:02}.{}",
+                draws.below(28) + 1,
+                draws.below(60),
+                draws.below(1000)
+            ),
+            _ => (0..draws.below(24)).map(|_| PIECES[draws.below(10)]).collect(),
+        }
+    }
+
+    /// Bytes whose hex is sometimes all decimal digits, which `push_str` then reads as a number.
+    fn random_bytes(draws: &mut Draws, length: usize) -> Vec<u8> {
+        let decimal = draws.below(4) == 0;
+        (0..length)
+            .map(|_| match decimal {
+                true => (draws.below(10) << 4 | draws.below(10)) as u8,
+                false => draws.next() as u8,
+            })
+            .collect()
+    }
+
+    fn random_batch(draws: &mut Draws, rows: usize) -> RecordBatch {
+        let texts: Vec<Option<String>> = (0..rows)
+            .map(|_| (draws.below(8) != 0).then(|| random_text(draws)))
+            .collect();
+        let blobs: Vec<Option<Vec<u8>>> = (0..rows)
+            .map(|_| {
+                let length = draws.below(20);
+                (draws.below(8) != 0).then(|| random_bytes(draws, length))
+            })
+            .collect();
+        let keys: Vec<Option<Vec<u8>>> = (0..rows)
+            .map(|_| (draws.below(8) != 0).then(|| random_bytes(draws, 16)))
+            .collect();
+        let milliseconds: Vec<Option<i64>> = (0..rows)
+            .map(|_| (draws.below(8) != 0).then(|| (draws.next() >> 24) as i64 - (1 << 39)))
+            .collect();
+        let days: Vec<Option<i32>> = milliseconds
+            .iter()
+            .map(|value| value.map(|value| (value / 86_400_000) as i32))
+            .collect();
+        let texts: Vec<Option<&str>> = texts.iter().map(Option::as_deref).collect();
+        let blobs: Vec<Option<&[u8]>> = blobs.iter().map(Option::as_deref).collect();
+        let columns: [(&str, ArrayRef); 11] = [
+            ("utf8", Arc::new(StringArray::from(texts.clone()))),
+            ("large_utf8", Arc::new(LargeStringArray::from(texts.clone()))),
+            ("utf8_view", Arc::new(StringViewArray::from(texts.clone()))),
+            (
+                "dictionary",
+                Arc::new(texts.into_iter().collect::<DictionaryArray<Int32Type>>()),
+            ),
+            ("binary", Arc::new(BinaryArray::from(blobs.clone()))),
+            ("large_binary", Arc::new(LargeBinaryArray::from(blobs.clone()))),
+            ("binary_view", Arc::new(BinaryViewArray::from(blobs))),
+            (
+                "fixed_size_binary",
+                Arc::new(FixedSizeBinaryArray::try_from_sparse_iter_with_size(keys.into_iter(), 16).unwrap()),
+            ),
+            ("integer", Arc::new(Int64Array::from(milliseconds.clone()))),
+            ("timestamp", Arc::new(TimestampMillisecondArray::from(milliseconds))),
+            ("date", Arc::new(Date32Array::from(days))),
+        ];
+        RecordBatch::try_from_iter(columns).unwrap()
+    }
+
+    #[test]
+    fn typed_columns_hash_as_the_formatter_did() {
+        let mut draws = Draws(0x9e37_79b9_7f4a_7c15);
+        for _ in 0..8 {
+            let batches = [random_batch(&mut draws, 500), random_batch(&mut draws, 300)];
+            let mut typed = Answer::default();
+            typed.push_batches(&batches).unwrap();
+            let mut formatted = Answer::default();
+            push_batches_through_formatter(&mut formatted, &batches);
+            assert_eq!(typed.row_hashes, formatted.row_hashes);
+        }
+    }
 
     #[test]
     fn numbers_match_across_types_and_rounding() {

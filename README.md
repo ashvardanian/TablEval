@@ -32,17 +32,18 @@ cargo run --release --no-default-features --features clickhouse-backend \
 
 ## Backends
 
-| Backend                                    | Parallelism                  | Sources           | Taxi | TPC-H         | ClickBench |
-| :----------------------------------------- | :--------------------------- | :---------------- | :--: | :-----------: | :--------: |
-| `tabl-eval-duckdb`, DuckDB bundled         | `SET threads`                | loaded, parquet   |  ✓   |       ✓       |     ✓      |
-| `tabl-eval-datafusion`, DataFusion 55      | `target_partitions`, Tokio   | loaded, parquet   |  ✓   |       ✓       |     ✓      |
-| `tabl-eval-polars`, Polars 0.55 SQL        | `POLARS_MAX_THREADS`         | loaded, parquet   |  ✓   |      ✓ ¹      |    ✓ ¹     |
-| `tabl-eval-sqlite`, SQLite bundled         | one thread                   | loaded            |  ✓   |       ✓       |    ✓ ²     |
-| `tabl-eval-arrow`, arrow-rs 60 by hand     | ForkUnion                    | loaded            |  ✓   |  Q1 and Q6    |            |
-| `tabl-eval-ustore`, UStore NVMe documents | ForkUnion, gather lanes      | loaded            |  ✓   |  Q1 and Q6    |            |
-| `tabl-eval-clickhouse`, ClickHouse 25.8    | `max_threads`                | loaded, parquet   |  ✓   |       ✓       |     ✓      |
-| `tabl-eval-postgres`, PostgreSQL 18.6      | parallel workers per gather  | loaded            |  ✓   |       ✓       |     ✓      |
-| `tabl-eval-cudf`, cuDF through `cudf` 0.3  | one GPU                      | loaded            |  ✓   |  Q1 and Q6    |            |
+| Backend                                   | Parallelism                 | Sources                 | Taxi  |   TPC-H   | ClickBench | Documents |
+| :---------------------------------------- | :-------------------------- | :---------------------- | :---: | :-------: | :--------: | :-------: |
+| `tabl-eval-duckdb`, DuckDB bundled        | `SET threads`               | loaded, parquet         |   ✓   |     ✓     |     ✓      |           |
+| `tabl-eval-datafusion`, DataFusion 55     | `target_partitions`, Tokio  | loaded, parquet         |   ✓   |     ✓     |     ✓      |           |
+| `tabl-eval-polars`, Polars 0.55 SQL       | `POLARS_MAX_THREADS`        | loaded, parquet         |   ✓   |    ✓ ¹    |    ✓ ¹     |           |
+| `tabl-eval-sqlite`, SQLite bundled        | one thread                  | loaded                  |   ✓   |     ✓     |    ✓ ²     |           |
+| `tabl-eval-arrow`, arrow-rs 60 by hand    | ForkUnion                   | loaded                  |   ✓   | Q1 and Q6 |            |           |
+| `tabl-eval-ustore`, UStore NVMe documents | ForkUnion, gather lanes     | loaded, stored          |   ✓   | Q1 and Q6 |            |     ✓     |
+| `tabl-eval-clickhouse`, ClickHouse 25.8   | `max_threads`               | loaded, parquet, stored |   ✓   |     ✓     |     ✓      |     ✓     |
+| `tabl-eval-mongodb`, MongoDB 9.0          | client lanes per partition  | stored                  |       |           |            |     ✓     |
+| `tabl-eval-postgres`, PostgreSQL 18.6     | parallel workers per gather | loaded                  |   ✓   |     ✓     |     ✓      |           |
+| `tabl-eval-cudf`, cuDF through `cudf` 0.3 | one GPU                     | loaded                  |   ✓   | Q1 and Q6 |            |           |
 
 > ¹ Queries Polars' SQL frontend cannot parse or plan are reported as `unsupported` rather than ported to its lazy API.
 > ² SQLite has no `REGEXP_REPLACE` or `DATE_TRUNC`, so the ClickBench queries using them are reported as `unsupported`.
@@ -50,6 +51,7 @@ cargo run --release --no-default-features --features clickhouse-backend \
 The table describes what each adapter attempts; every report lists the queries an engine could not run.
 `loaded` ingests the parts into the engine's own storage before the queries: a DuckDB database file, DataFusion `MemTable`s, collected Polars frames, SQLite and PostgreSQL tables, ClickHouse MergeTree tables, decoded Arrow batches, UStore JSON documents, or cuDF device tables.
 `parquet` registers views over the parts, so every query decodes them again.
+`stored` opens the stores a load left in the `--data-dir` folders and loads nothing, for the documents suite.
 Each engine keeps its own thread pool, sized by `--threads`; only the Arrow baseline and UStore split work themselves, evenly across a ForkUnion pool, through the same folds.
 Polars sizes one global pool when it first runs, so `tabl-eval-polars` takes one `--threads` value per process.
 
@@ -90,17 +92,23 @@ A host gather splits the key windows across `--threads` lanes, each on an `Execu
 Further `--data-dir` folders spread its files across drives.
 `--ingest-during-queries` appends `lineitem` once more while `q06` gathers snapshot after snapshot, fails on any snapshot that holds no committed prefix, and writes under `results/ingest-during-queries/`.
 
+A stored source runs ClickHouse and MongoDB natively from `--server`, with no container, over the folders a load left, so they inherit the cores and cgroup of the run.
+ClickHouse runs one server over the first `--data-dir`, keeping that load's disks and users and putting its config and logs in a temporary folder, and further `--data-dir` folders select the first partitions.
+`--document-column string` reads each partition's `doc String` table through `JSONExtract`, and `json` reads a native `JSON` column, whose tables `--source loaded` creates once from the first with `INSERT … SELECT` and `OPTIMIZE … FINAL`.
+MongoDB runs one `mongod` per `--data-dir`, in normal mode, with one setting off stock: WiredTiger's cache takes half of one partition's share of the memory limit less 1 GB, since every server would otherwise size itself from the whole limit.
+UStore opens each partition's NVMe manifest, or its RocksDB directory read-only, and splits `--threads` into gather lanes per partition.
+
 ## Queries
 
 Names spell out what a query computes where no standard numbering exists.
 The four Taxi queries are the classic billion-taxi-rides set that UDSB ran:
 
-| UDSB      | Query                                   | Computes                                                     |
-| :-------- | :-------------------------------------- | :----------------------------------------------------------- |
-| Query 1   | `count-by-vendor`                       | Trips per vendor                                             |
-| Query 2   | `average-amount-by-passengers`          | Average fare per passenger count                             |
-| Query 3   | `count-by-passengers-and-year`          | Trips per passenger count and pickup year                    |
-| Query 4   | `count-by-passengers-year-and-distance` | Trips per passenger count, year and whole mile, ranked by year and count |
+| UDSB    | Query                                   | Computes                                                                 |
+| :------ | :-------------------------------------- | :----------------------------------------------------------------------- |
+| Query 1 | `count-by-vendor`                       | Trips per vendor                                                         |
+| Query 2 | `average-amount-by-passengers`          | Average fare per passenger count                                         |
+| Query 3 | `count-by-passengers-and-year`          | Trips per passenger count and pickup year                                |
+| Query 4 | `count-by-passengers-year-and-distance` | Trips per passenger count, year and whole mile, ranked by year and count |
 
 The distance is floored, where UDSB rounded it.
 Engines round halves differently: DuckDB, SQLite and DataFusion round 2.5 to 3, while PostgreSQL and others round it to the even 2, and taxi distances end in `.5` often enough to change the answer.
@@ -110,18 +118,35 @@ TPC-H runs its 22 queries, `q01` through `q22`, with the specification's validat
 ClickBench runs its 43 queries, `q00` through `q42`, in their PostgreSQL spelling.
 `--queries q01,q06` selects and orders a subset.
 
+The documents suite measures how fast JSON documents already stored turn into Arrow tables, one per partition, every partition at once.
+Its queries are named by workload, keys and fields, where `f1` and `f3` read the collection's first one or three scalar fields and `all` every one:
+
+| Query                  | Runs                                                                                          | Verified        |
+| :--------------------- | :-------------------------------------------------------------------------------------------- | :-------------- |
+| `keyed-gather-<N>-<F>` | the N keys of the draw, gathered with F fields, for F of `f1`, `f3` and `all`                 | rows and digest |
+| `sample-gather-<N>-f3` | as many keys per partition as the draw holds there, drawn by the system itself, then gathered | rows            |
+| `scan-<F>`             | every document with F fields, for F of `f1` and `f3`                                          | rows and digest |
+
+Every row is the 16-byte key followed by its cells, so digests agree across systems.
+List fields are left out of `all`, since a typed gather reads them as collisions.
+UStore gathers through `docs_gather` and walks a docs cursor with values, MongoDB runs `find` with `$in` and a projection, `$sample` and a projected `find`, and ClickHouse selects with `WHERE key IN`, `ORDER BY rand() LIMIT` and a plain `SELECT`, all `FORMAT Arrow`.
+
 ## Datasets
 
 The datasets and their download or generation recipes are in [`data/README.md`](data/README.md).
 
-| Dataset       | Fact Table | Rows     | Other Tables | Source                                    | Answers Pinned       |
-| :------------ | :--------- | -------: | -----------: | :---------------------------------------- | :------------------- |
-| NYC Taxi      | `trips`    |    1.78G |            0 | TLC yellow trips, 2009–2024, 31 GB         | four-trip fixture    |
-| TPC-H         | `lineitem` | 6M × SF  |            7 | generated by `tabl-generate`               | at SF 0.01 and 1     |
-| ClickBench    | `hits`     |     100M |            0 | ClickBench's partitioned set, 14.7 GB      | none, cross-checked  |
+| Dataset    | Fact Table |    Rows | Other Tables | Source                                | Answers Pinned      |
+| :--------- | :--------- | ------: | -----------: | :------------------------------------ | :------------------ |
+| NYC Taxi   | `trips`    |   1.78G |            0 | TLC yellow trips, 2009–2024, 31 GB    | four-trip fixture   |
+| TPC-H      | `lineitem` | 6M × SF |            7 | generated by `tabl-generate`          | at SF 0.01 and 1    |
+| ClickBench | `hits`     |    100M |            0 | ClickBench's partitioned set, 14.7 GB | none, cross-checked |
 
 `--rows 100M,1G` sweeps prefixes of the Taxi and ClickBench fact tables in whole parts.
 TPC-H scales by folder, `data/tpch-sf10` or `data/tpch-sf100`, instead.
+
+The documents suite reads USearchMolecules collections stored as JSON documents, partitioned by a hash of the key, one store per partition and drive.
+Its dataset folder holds the key draws of one collection, `<N>.arrow` each, which `tabl-draw-keys` writes once from the partitions' key-sorted Arrow inputs with a fixed seed, so every system gathers the same keys.
+Each draw records every partition's document count, which scans verify their rows against.
 
 ## Results
 
@@ -151,13 +176,15 @@ Every flag also reads `TABLEVAL_<FLAG>` as its default, upper-cased with dashes 
 ```text
 tabl-eval-*
   --dataset <DIR>                       required
-      Folder of <table>.part_NNN.parquet files; its tables pick the suite.
+      Folder of <table>.part_NNN.parquet files, whose tables pick the suite, or of key draws for --suite documents.
+  --suite <SUITE>                       picked by the dataset
+      documents runs the documents suite; taxi, tpch and clickbench check what the dataset folder holds.
   --rows <N,...>                        all
       Fact-table prefixes in whole parts, with decimal K, M, G or T; a sweep.
   --threads <N,...>                     0
       Engine threads, 0 for every core in the affinity mask; a sweep.
   --source <SOURCE,...>                 loaded
-      loaded ingests the parts first, parquet queries them in place; a sweep.
+      loaded ingests the parts first, parquet queries them in place, stored opens the stores in --data-dir; a sweep.
   --queries <NAME,...>                  the whole suite
       Query names, run in the order given.
   --repetitions <N>                     3
@@ -168,7 +195,7 @@ tabl-eval-*
       answers checks result digests, none skips them.
   --data-dir <DIR,...>                  data
       Parents of the engines' own storage, one folder per configuration, replaced on every run; the further ones
-      mirror it for engines that spread their files, one per drive.
+      mirror it for engines that spread their files, one per drive. With --source stored, the stores themselves.
   --output <DIR>                        results
       Directory for JSON reports.
   --memory-limit <SIZE>                 the cgroup's limit, else all RAM
@@ -176,7 +203,8 @@ tabl-eval-*
   --perf-counters                       off
       Record system-wide hardware counters per phase; Linux and the perf-counters feature only.
   --between-runs <POLICY>               keep
-      keep, reopen or reopen-and-drop-caches before each query's cold run; dropping caches needs Linux and root.
+      keep, reopen or reopen-and-drop-caches before each query's cold run; dropping caches needs Linux and root
+      or passwordless sudo.
 ```
 
 </details>
@@ -204,6 +232,18 @@ tabl-eval-ustore
 tabl-eval-clickhouse, tabl-eval-postgres
   --startup-time-limit <DURATION>       120s
       Time limit for container start and readiness.
+
+tabl-eval-clickhouse
+  --server <PATH>                       clickhouse
+      The ClickHouse binary a stored source runs natively.
+  --document-column <COLUMN>            string
+      string reads doc String through JSONExtract, json a native JSON column.
+
+tabl-eval-mongodb
+  --server <PATH>                       mongod
+      The mongod binary each stored partition runs.
+  --startup-time-limit <DURATION>       600s
+      Time limit for every server's start.
 ```
 
 </details>
@@ -231,6 +271,14 @@ tabl-download
       Rows per Taxi part.
   --keep-raw                            off
       Keep the original files under raw/.
+
+tabl-draw-keys
+  --inputs <GLOB>                       required
+      The partition folders, <collection>/p<partition> of key-sorted Arrow files.
+  --counts <N,...>                      required
+      Keys per draw, with decimal K, M, G or T.
+  --output <DIR>                        required
+      The documents dataset folder, one <N>.arrow per draw.
 ```
 
 </details>
@@ -269,8 +317,9 @@ src/fixture.rs             Four-trip Taxi fixture for tests
 src/<engine>.rs            One binary per engine
 src/generate.rs            TPC-H generator
 scripts/download.rs        Taxi and ClickBench downloader
+scripts/draw_keys.rs       Key draws for the documents suite
 scripts/plot.py            Report visualization
-sql/                       Taxi and TPC-H queries, pinned TPC-H answers
+sql/                       Taxi and TPC-H queries, pinned TPC-H answers, ClickHouse JSON tables
 ```
 
 Directory guides describe [source contracts](src/README.md), [datasets](data/README.md), [plotting and checks](scripts/README.md), [standalone server configurations](docker/README.md), and [the TPC-H queries' origin](sql/tpch/README.md).

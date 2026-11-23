@@ -27,12 +27,19 @@
 //!     --dataset data/tpch-sf1 --gather cpu
 //! ```
 //!
+//! `--suite documents --source stored` opens the stores a load left, one database per partition in each `--data-dir`:
+//! the one `*.ustore.json` manifest there on NVMe, the directory read-only on RocksDB. Each partition gathers on
+//! `--threads` divided by the partitions lanes, as the tables do. A keyed gather splits the draw's keys into one window
+//! per lane, a sample draws through `docs_sample` and then gathers the same way, and a scan walks a docs cursor with
+//! values per lane, between bounds taken from the draw's sorted keys, decoding every document's fields with Arrow's
+//! JSON reader.
+//!
 //! The crate's own CMake build carries no device kernels: `--gather gpu` needs `USTORE_LIBRARY_DIR` to name the `lib/`
 //! of a UStore prefix configured with `USTORE_CUDA_ARCH`.
 
 use std::{
     alloc::System,
-    collections::{BTreeMap, HashMap},
+    collections::{hash_map::Entry, BTreeMap, HashMap},
     ffi::{c_int, c_void, CStr},
     fs::File,
     io::Write,
@@ -40,7 +47,7 @@ use std::{
     path::{Path, PathBuf},
     ptr::{null, null_mut},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc, Mutex, PoisonError,
     },
     time::Instant,
@@ -63,14 +70,17 @@ use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchR
 use serde_json::{json, Value};
 use ustore::{
     arrow::ArrowDeviceArray, gpu_devices, Arena, ArrowArray, ArrowArrayStream, Binary, CollectionID, Column,
-    DataDirectory, Database, DocumentEntry, Durability, Engine, Executor, GPUDevice, GPUVendor, Gds, IOOptions,
-    IngestOrder, Json, Key, LevelDBOptions, Modality, Modification, NVMEOptions, RAMOptions, RocksDBOptions, Snapshot,
-    Text,
+    DataDirectory, Database, DocsCursorConfig, DocumentEntry, Durability, Engine, Executor, GPUDevice, GPUVendor, Gds,
+    IOOptions, IngestOrder, Json, Key, KeyRange, LevelDBOptions, Modality, Modification, NVMEOptions, NVMEViewOptions,
+    RAMOptions, RocksDBOptions, ScanDirection, Snapshot, Text,
 };
 
 use tableval::{
-    backend::directory_bytes, folds::Folds, output, run, unsupported, Answer, Backend, CommonArgs, Configuration,
-    Executed, Query, Result, Source, Table, Verify,
+    backend::directory_bytes,
+    folds::Folds,
+    output, run,
+    suite::{self, fields_schema, keyed_batch, partition_of, DocumentField, Draw, Workload},
+    unsupported, Answer, Backend, CommonArgs, Configuration, Executed, Query, Result, Source, Suite, Table, Verify,
 };
 
 /// Rows of one ingested batch and of one gather; each gather holds its columns in an arena of its own.
@@ -274,6 +284,7 @@ impl Requested {
                 DataType::Int64 | DataType::Timestamp(_, _) => (Column::new::<i64>(name.to_owned()), data_type.clone()),
                 DataType::Decimal128(_, _) => (Column::new::<i64>(name.to_owned()), DataType::Int64),
                 DataType::Float64 => (Column::new::<f64>(name.to_owned()), DataType::Float64),
+                DataType::Boolean => (Column::new::<bool>(name.to_owned()), DataType::Boolean),
                 other => return Err(unsupported(&format!("no gather into {other}"))),
             };
             columns.push(column);
@@ -697,22 +708,17 @@ impl UstoreBackend {
             }
             Gather::Cpu => {
                 let threads = (output::budget().cores / lanes_count).max(1);
-                // Threads outside the opening executor share these channels, so every lane's thread gets one.
-                let io = IOOptions {
-                    shared_io_channels: lanes_count * threads,
-                    ..IOOptions::default()
-                };
-                let opening = Executor::for_nvme(1, &io).map_err(|e| e.to_string())?;
                 let lanes = (0..lanes_count)
                     .map(|_| -> Result<Lane> {
-                        let executor = Executor::for_nvme(threads, &IOOptions::default()).map_err(|e| e.to_string())?;
+                        let executor =
+                            Executor::for_nvme(threads, &IOOptions::default(), &[], &[]).map_err(|e| e.to_string())?;
                         Ok(Lane {
                             ring: ring(),
                             executor: Some(executor),
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                (lanes, threads, None, Some(opening))
+                (lanes, threads, None, None)
             }
         };
         let database = open_database(settings.engine, path, &further, opening.as_ref())?;
@@ -1236,8 +1242,446 @@ impl Backend for UstoreBackend {
     }
 }
 
+/// One partition of the documents suite: its lanes, the store they read, and the collection there.
+struct Partition {
+    // Declared first, so the lanes and their arenas go before the database.
+    lanes: Vec<Lane>,
+    database: Database,
+    collection: CollectionID,
+    /// Index of the partition in every key draw.
+    index: usize,
+    /// Documents the partition holds, which a scan returns.
+    rows: u64,
+}
+
+/// The documents suite over the stores a load left, one per partition, each in its own `--data-dir`.
+struct StoredDocuments {
+    partitions: Vec<Partition>,
+    engine: Engine,
+    arena: Arenas,
+    threads: usize,
+    folders: Vec<PathBuf>,
+    tables: Vec<Table>,
+    draws: HashMap<PathBuf, Draw>,
+}
+
+/// The fields of a documents query as a gather converts them.
+fn requested_documents(fields: &[DocumentField]) -> Requested {
+    let columns = fields
+        .iter()
+        .map(|field| match field.field_type {
+            suite::FieldType::Text => Column::new::<Binary>(field.name),
+            suite::FieldType::Integer => Column::new::<i64>(field.name),
+            suite::FieldType::Real => Column::new::<f64>(field.name),
+            suite::FieldType::Boolean => Column::new::<bool>(field.name),
+        })
+        .collect();
+    Requested {
+        columns,
+        schema: fields_schema(fields),
+    }
+}
+
+/// The 16 bytes of every key, laid end to end.
+fn key_bytes(keys: &[Key]) -> Vec<u8> {
+    keys.iter().flat_map(|key| key.0 .0).collect()
+}
+
+/// The cores this process may run on, in order.
+fn allowed_cores() -> Result<Vec<usize>> {
+    // SAFETY: the kernel fills a zeroed bit set within its size.
+    let mut allowed: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    if unsafe { libc::sched_getaffinity(0, size_of::<libc::cpu_set_t>(), &mut allowed) } != 0 {
+        return Err(format!("sched_getaffinity: {}", std::io::Error::last_os_error()));
+    }
+    Ok((0..libc::CPU_SETSIZE as usize)
+        .filter(|&core| unsafe { libc::CPU_ISSET(core, &allowed) })
+        .collect())
+}
+
+/// Runs `make` with the calling thread confined to `cores`, restoring its mask afterwards.
+fn on_cores<T>(cores: &[usize], make: impl FnOnce() -> T) -> Result<T> {
+    // SAFETY: both masks are plain bit sets the kernel reads and fills within their size.
+    let mut previous: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    let mut narrowed: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    for &core in cores {
+        unsafe { libc::CPU_SET(core, &mut narrowed) };
+    }
+    let size = size_of::<libc::cpu_set_t>();
+    if unsafe { libc::sched_getaffinity(0, size, &mut previous) } != 0
+        || unsafe { libc::sched_setaffinity(0, size, &narrowed) } != 0
+    {
+        return Err(format!("sched_setaffinity: {}", std::io::Error::last_os_error()));
+    }
+    let made = make();
+    unsafe { libc::sched_setaffinity(0, size, &previous) };
+    Ok(made)
+}
+
+/// The store a load left in `folder`, read-only: the NVMe database its one manifest names, or the RocksDB directory.
+fn open_store(engine: Engine, folder: &Path, executor: Option<&Executor>, memory_limit: u64) -> Result<Database> {
+    let directory = folder.to_str().ok_or("a data directory is not UTF-8")?;
+    match engine {
+        Engine::NVME => {
+            let mut manifests = std::fs::read_dir(folder)
+                .map_err(|e| format!("{}: {e}", folder.display()))?
+                .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+                .filter(|name| name.ends_with(".ustore.json"));
+            let (Some(manifest), None) = (manifests.next(), manifests.next()) else {
+                return Err(format!("{} holds no single *.ustore.json manifest", folder.display()));
+            };
+            let manifest = format!("{directory}/{manifest}");
+            // A view writes nothing into the store, so runs never move its manifest's generation
+            Database::view_nvme(&NVMEViewOptions {
+                executor,
+                memory_limit,
+                ..NVMEViewOptions::at(&manifest)
+            })
+        }
+        Engine::RocksDB => Database::view_rocksdb(&RocksDBOptions::at(directory)),
+        Engine::RAM | Engine::LevelDB => {
+            return Err(unsupported(&format!("--engine {engine} keeps no stored documents")))
+        }
+    }
+    .map_err(|e| format!("{}: {e}", folder.display()))
+}
+
+/// Gathers `keys` from `partition`, one window per lane, each batch led by its keys.
+fn gather_partition(partition: &Partition, keys: &[Key], requested: &Requested) -> Result<Vec<RecordBatch>> {
+    // One gather call per lane, so the engine sorts and coalesces the whole share at once
+    let window = keys.len().div_ceil(partition.lanes.len()).max(1);
+    let windows: Vec<&[Key]> = keys.chunks(window).collect();
+    let next = AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        let lanes: Vec<_> = partition
+            .lanes
+            .iter()
+            .map(|lane| {
+                let (windows, next) = (&windows, &next);
+                scope.spawn(move || -> Result<Vec<RecordBatch>> {
+                    let snapshot = partition.database.snapshot().map_err(|e| e.to_string())?;
+                    let mut imported = vec![ImportedBytes::default(); requested.columns.len()];
+                    let mut batches = Vec::new();
+                    while let Some(keys) = windows.get(next.fetch_add(1, Ordering::Relaxed)) {
+                        let cells = gather_keys(
+                            lane,
+                            &snapshot,
+                            None,
+                            partition.collection,
+                            keys,
+                            requested,
+                            &mut imported,
+                        )?;
+                        batches.push(keyed_batch(key_bytes(keys), &cells)?);
+                    }
+                    Ok(batches)
+                })
+            })
+            .collect();
+        let mut batches = Vec::new();
+        for lane in lanes {
+            batches.extend(lane.join().map_err(|_| "a gather lane panicked".to_owned())??);
+        }
+        Ok(batches)
+    })
+}
+
+/// Draws `wanted` keys of `partition` through `docs_sample` on its first lane, then gathers them.
+fn sample_partition(partition: &Partition, wanted: usize, requested: &Requested) -> Result<Vec<RecordBatch>> {
+    let lane = &partition.lanes[0];
+    let snapshot = partition.database.snapshot().map_err(|e| e.to_string())?;
+    let view = match &lane.executor {
+        Some(executor) => snapshot.on(executor),
+        None => snapshot.view(),
+    };
+    let mut arena = lane.ring.take_or_new(lane.executor.as_ref())?;
+    let keys = view
+        .docs_sample(partition.collection, wanted, &mut arena)
+        .map_err(|e| e.to_string())?
+        .to_vec();
+    lane.ring.put(arena);
+    gather_partition(partition, &keys, requested)
+}
+
+/// Walks every document of `partition` with a docs cursor per lane, the lanes split at quantiles of `drawn`, each pull
+/// gathering `fields` into typed batches the cursor splits over its executor's threads, which Arrow takes in place.
+fn scan_partition(partition: &Partition, drawn: &[[u8; 16]], fields: &[DocumentField]) -> Result<Vec<RecordBatch>> {
+    let mut sorted = drawn.to_vec();
+    sorted.sort_unstable();
+    let lanes = partition.lanes.len();
+    let mut bounds: Vec<Key> = (1..lanes)
+        .filter_map(|lane| sorted.get(lane * sorted.len() / lanes).map(|&key| Key::from(key)))
+        .collect();
+    bounds.dedup();
+    let starts = std::iter::once(None).chain(bounds.iter().copied().map(Some));
+    let ends = bounds.iter().copied().map(Some).chain(std::iter::once(None));
+    let ranges: Vec<KeyRange> = starts
+        .zip(ends)
+        .map(|(start, end)| KeyRange {
+            start,
+            end,
+            direction: ScanDirection::Ascending,
+        })
+        .collect();
+    let names: Vec<&str> = fields.iter().map(|field| field.name).collect();
+    let requested = Requested::of(&names, &fields_schema(fields))?;
+    std::thread::scope(|scope| {
+        let walks: Vec<_> = partition
+            .lanes
+            .iter()
+            .zip(ranges)
+            .map(|(lane, range)| {
+                let requested = &requested;
+                scope.spawn(move || -> Result<Vec<RecordBatch>> {
+                    let snapshot = partition.database.snapshot().map_err(|e| e.to_string())?;
+                    let view = match &lane.executor {
+                        Some(executor) => snapshot.on(executor),
+                        None => snapshot.view(),
+                    };
+                    let config = DocsCursorConfig {
+                        columns: requested.columns.clone(),
+                        ..DocsCursorConfig::default()
+                    };
+                    let mut cursor = view
+                        .docs_cursor(partition.collection, range, config)
+                        .map_err(|e| e.to_string())?;
+                    let mut imported = vec![ImportedBytes::default(); requested.columns.len()];
+                    let mut batches = Vec::new();
+                    loop {
+                        // Each pull's columns stay in its arena until Arrow releases the last of them
+                        let mut arena = lane.ring.take_or_new(lane.executor.as_ref())?;
+                        let pulled = cursor.next(BATCH_ROWS, &mut arena).map_err(|e| e.to_string())?;
+                        if pulled.is_empty() {
+                            lane.ring.put(arena);
+                            break;
+                        }
+                        let mut exported = Vec::with_capacity(pulled.len());
+                        for (keys, columns) in pulled.iter() {
+                            // SAFETY: the arena moves into every column's release below.
+                            let columns: Vec<ArrowDeviceArray> = columns
+                                .to_arrow()
+                                .map_err(|e| e.to_string())?
+                                .into_iter()
+                                .map(|export| unsafe { export.into_parts() }.1)
+                                .collect();
+                            exported.push((key_bytes(keys), columns));
+                        }
+                        let arena = Arc::new(Mutex::new(HeldArena {
+                            arena: Some(arena),
+                            ring: lane.ring.clone(),
+                        }));
+                        for (keys, columns) in exported {
+                            let mut arrays = Vec::with_capacity(columns.len());
+                            for ((mut array, field), bytes) in columns
+                                .into_iter()
+                                .zip(requested.schema.fields())
+                                .zip(imported.iter_mut())
+                            {
+                                arrays.push(import(&mut array, field.data_type(), &arena, None, bytes)?);
+                            }
+                            let cells =
+                                RecordBatch::try_new(requested.schema.clone(), arrays).map_err(|e| e.to_string())?;
+                            batches.push(keyed_batch(keys, &cells)?);
+                        }
+                    }
+                    Ok(batches)
+                })
+            })
+            .collect();
+        let mut batches = Vec::new();
+        for walk in walks {
+            batches.extend(walk.join().map_err(|_| "a scan lane panicked".to_owned())??);
+        }
+        Ok(batches)
+    })
+}
+
+impl StoredDocuments {
+    fn open(configuration: &Configuration, path: &Path, further: Vec<PathBuf>, engine: Engine, arena: Arenas) -> Self {
+        Self {
+            partitions: Vec::new(),
+            engine,
+            arena,
+            threads: configuration.threads.get(),
+            folders: std::iter::once(path.to_path_buf()).chain(further).collect(),
+            tables: Vec::new(),
+            draws: HashMap::new(),
+        }
+    }
+
+    /// Opens the store of every partition a `--data-dir` holds, the first partitions in order, with lanes of their own.
+    fn open_partitions(&mut self) -> Result<()> {
+        self.partitions.clear();
+        let count = self.folders.len();
+        if count > self.tables.len() {
+            return Err(format!("{count} data directories for {} partitions", self.tables.len()));
+        }
+        // An NVMe partition gathers on one executor over all its cores, since one-thread lanes oversubscribe the
+        // cores with a pool worker each; engines without an executor parallelize by lanes alone
+        let lanes = match self.engine {
+            Engine::NVME => 1,
+            _ => (self.threads / count).max(1),
+        };
+        // The calling thread holds a core of its own while its executor's workers gather
+        let threads = (self.threads / (count * lanes)).saturating_sub(1).max(1);
+        let memory_limit = output::budget().memory_limit / count as u64;
+        let allowed = allowed_cores()?;
+        let share = (allowed.len() / count).max(1);
+        for (partition, (folder, table)) in self.folders.iter().zip(&self.tables).enumerate() {
+            let (name, index) = partition_of(&table.name).ok_or("a documents table names no partition")?;
+            let cores = &allowed[(partition * share).min(allowed.len() - share)..][..share];
+            let lanes = (0..lanes)
+                .map(|_| -> Result<Lane> {
+                    let executor = match self.engine {
+                        // An executor pins its threads from the first core its creator may run on, so each
+                        // partition's executor is made on that partition's own share of the cores
+                        Engine::NVME => Some(
+                            on_cores(cores, || Executor::for_nvme(threads, &IOOptions::default(), &[], &[]))?
+                                .map_err(|e| e.to_string())?,
+                        ),
+                        _ => None,
+                    };
+                    Ok(Lane {
+                        ring: Arc::new(ArenaRing::new(self.arena)),
+                        executor,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            // The store opens on the first lane, since a database keeps no executor and a lane owns its rings
+            let database = open_store(self.engine, folder, lanes[0].executor.as_ref(), memory_limit)?;
+            let collection = database
+                .head()
+                .collection_find(name, &mut Arena::new().map_err(|e| e.to_string())?)
+                .map_err(|e| format!("{}: `{name}`: {e}", folder.display()))?
+                .0;
+            self.partitions.push(Partition {
+                lanes,
+                database,
+                collection,
+                index,
+                rows: table.rows,
+            });
+        }
+        Ok(())
+    }
+}
+
+impl Backend for StoredDocuments {
+    fn metadata(&self) -> BTreeMap<String, Value> {
+        let lanes = self.partitions.first().map_or(0, |partition| partition.lanes.len());
+        BTreeMap::from([
+            ("backend".into(), json!(format!("ustore-{}", self.engine))),
+            ("library_version".into(), json!(ustore::version())),
+            ("engine".into(), json!(self.engine.to_string())),
+            ("threads".into(), json!(self.threads)),
+            ("arena".into(), json!(self.arena)),
+            ("partitions".into(), json!(self.folders.len())),
+            ("lanes_per_partition".into(), json!(lanes)),
+            ("stores".into(), json!(self.folders)),
+        ])
+    }
+
+    fn load(&mut self, tables: &[Table], source: Source) -> Result<()> {
+        if source != Source::Stored {
+            return Err(unsupported(
+                "the documents suite reads the stores a load left, with --source stored",
+            ));
+        }
+        self.tables = tables.to_vec();
+        self.open_partitions()
+    }
+
+    fn run(&mut self, query: &Query, answer: &mut Answer) -> Result<Executed> {
+        let documents = query
+            .documents
+            .as_ref()
+            .ok_or_else(|| unsupported("not a documents query"))?;
+        if let Entry::Vacant(vacant) = self.draws.entry(documents.keys.clone()) {
+            vacant.insert(Draw::read(&documents.keys)?);
+        }
+        let draw = &self.draws[&documents.keys];
+        let requested = requested_documents(documents.fields);
+        let start = Instant::now();
+        let gathered = std::thread::scope(|scope| {
+            #[expect(clippy::needless_collect, reason = "every partition starts before the first join")]
+            let partitions: Vec<_> = self
+                .partitions
+                .iter()
+                .map(|partition| {
+                    let (requested, drawn) = (&requested, &draw.keys[partition.index]);
+                    scope.spawn(move || -> Result<Vec<RecordBatch>> {
+                        match documents.workload {
+                            Workload::KeyedGather => {
+                                let keys: Vec<Key> = drawn.iter().map(|&key| Key::from(key)).collect();
+                                gather_partition(partition, &keys, requested)
+                            }
+                            Workload::SampleGather => sample_partition(partition, drawn.len(), requested),
+                            Workload::Scan => scan_partition(partition, drawn, documents.fields),
+                        }
+                    })
+                })
+                .collect();
+            partitions
+                .into_iter()
+                .map(|partition| partition.join().map_err(|_| "a partition panicked".to_owned())?)
+                .collect::<Result<Vec<_>>>()
+        })?;
+        let executed = Executed::since(start);
+        for (partition, batches) in self.partitions.iter().zip(&gathered) {
+            let rows: usize = batches.iter().map(RecordBatch::num_rows).sum();
+            let wanted = match documents.workload {
+                Workload::KeyedGather => draw.keys[partition.index].len() as u64,
+                Workload::SampleGather => (draw.keys[partition.index].len() as u64).min(partition.rows),
+                Workload::Scan => partition.rows,
+            };
+            if rows as u64 != wanted {
+                return Err(format!(
+                    "partition {} answered {rows} of {wanted} rows",
+                    partition.index
+                ));
+            }
+            answer.push_batches(batches)?;
+        }
+        Ok(executed)
+    }
+
+    fn disk_bytes(&self) -> Result<u64> {
+        self.folders.iter().map(|folder| directory_bytes(folder)).sum()
+    }
+
+    fn multiple_data_dirs(&self) -> bool {
+        true
+    }
+
+    fn reopen(&mut self) -> Result<()> {
+        self.partitions.clear();
+        match self.tables.is_empty() {
+            true => Ok(()),
+            false => self.open_partitions(),
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let mut cli: Cli = tableval::parse_cli();
+    if cli.common.suite == Some(Suite::Documents) {
+        if cli.gather == Gather::Gpu || cli.sample_rate.is_some() || cli.ingest_during_queries {
+            return Err(
+                "--suite documents gathers on the host, without --sample-rate or --ingest-during-queries".into(),
+            );
+        }
+        let (engine, arena) = (cli.engine, cli.arena);
+        let spelled = [("Engine", engine.to_string()), ("Arena", tableval::spell_value(&arena))];
+        let common = cli.common.clone();
+        let options = json!({"engine": engine.to_string(), "arena": arena});
+        return run(cli.common, options, &spelled, |configuration, path| {
+            let further = common.further_data_dirs(path);
+            Ok(Box::new_in(
+                StoredDocuments::open(configuration, path, further, engine, arena),
+                System,
+            ))
+        });
+    }
     let gather = cli.gather;
     let [device] = cli.devices[..] else {
         return Err("--devices takes one ordinal, as one executor gathers".into());

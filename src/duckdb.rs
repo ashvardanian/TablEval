@@ -13,7 +13,9 @@ use clap::Parser;
 use duckdb::Connection;
 use serde_json::{json, Value};
 
-use tableval::{output, run, Answer, Backend, CommonArgs, Configuration, Executed, Query, Result, Source, Table};
+use tableval::{
+    output, run, unsupported, Answer, Backend, CommonArgs, Configuration, Executed, Query, Result, Source, Table,
+};
 
 #[derive(Parser)]
 struct Cli {
@@ -99,6 +101,7 @@ impl Backend for DuckdbBackend {
         let kind = match source {
             Source::Loaded => "TABLE",
             Source::Parquet => "VIEW",
+            Source::Stored => return Err(unsupported("DuckDB reads Parquet parts, not stores")),
         };
         for table in tables {
             self.connection

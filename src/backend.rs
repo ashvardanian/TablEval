@@ -19,6 +19,8 @@ pub enum Source {
     Loaded,
     /// Query the Parquet parts in place.
     Parquet,
+    /// Open the stores already in the `--data-dir` folders and load nothing, for the documents suite.
+    Stored,
 }
 
 /// One table of the dataset: its Parquet parts in natural order and their totals from the footers.
@@ -46,7 +48,8 @@ impl Executed {
 pub trait Backend {
     /// Engine name, version and the settings it applied, merged into the report's `config`.
     fn metadata(&self) -> BTreeMap<String, Value>;
-    /// Ingests the tables for `Source::Loaded`, or registers their Parquet parts for `Source::Parquet`.
+    /// Ingests the tables for `Source::Loaded`, registers their Parquet parts for `Source::Parquet`, or opens the
+    /// stores of the documents suite's partitions, one table each, for `Source::Stored`.
     fn load(&mut self, tables: &[Table], source: Source) -> Result<()>;
     /// Runs one query to completion and writes its rows into `answer` after the engine has materialized them.
     fn run(&mut self, query: &Query, answer: &mut Answer) -> Result<Executed>;

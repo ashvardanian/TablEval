@@ -54,6 +54,7 @@ impl Backend for PolarsBackend {
             let frame = match source {
                 Source::Parquet => scan,
                 Source::Loaded => scan.collect().map_err(|e| format!("{}: {e}", table.name))?.lazy(),
+                Source::Stored => return Err(unsupported("Polars reads Parquet parts, not stores")),
             };
             self.context.register(&table.name, frame);
         }

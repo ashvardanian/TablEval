@@ -18,7 +18,7 @@ use datafusion::{
 use serde_json::{json, Value};
 use tokio::runtime::Runtime;
 
-use tableval::{run, Answer, Backend, CommonArgs, Configuration, Executed, Query, Result, Source, Table};
+use tableval::{run, unsupported, Answer, Backend, CommonArgs, Configuration, Executed, Query, Result, Source, Table};
 
 #[derive(Parser)]
 struct Cli {
@@ -76,6 +76,9 @@ impl Backend for DatafusionBackend {
     }
 
     fn load(&mut self, tables: &[Table], source: Source) -> Result<()> {
+        if source == Source::Stored {
+            return Err(unsupported("DataFusion reads Parquet parts, not stores"));
+        }
         for table in tables {
             let parts: Vec<String> = table.parts.iter().map(|part| part.display().to_string()).collect();
             let context = &self.context;
@@ -83,7 +86,7 @@ impl Backend for DatafusionBackend {
                 let frame = context.read_parquet(parts, ParquetReadOptions::default()).await?;
                 match source {
                     Source::Parquet => Ok(frame.into_view()),
-                    Source::Loaded => {
+                    Source::Loaded | Source::Stored => {
                         let schema = Arc::new(frame.schema().as_arrow().clone());
                         let partitions = frame.collect_partitioned().await?;
                         Ok(Arc::new(MemTable::try_new(schema, partitions)?) as _)
