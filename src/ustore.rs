@@ -70,9 +70,9 @@ use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchR
 use serde_json::{json, Value};
 use ustore::{
     arrow::ArrowDeviceArray, gpu_devices, Arena, ArrowArray, ArrowArrayStream, Binary, CollectionID, Column,
-    DataDirectory, Database, DocsCursorConfig, DocumentEntry, Durability, Engine, Executor, GPUDevice, GPUVendor, Gds,
-    IOOptions, IngestOrder, Json, Key, KeyRange, LevelDBOptions, Modality, Modification, NVMEOptions, NVMEViewOptions,
-    RAMOptions, RocksDBOptions, ScanDirection, Snapshot, Text,
+    DataDirectory, Database, DocsCursorConfig, DocsVerbs, DocumentEntry, Durability, Engine, Executor, GPUDevice,
+    GPUVendor, Gds, IOOptions, IngestOrder, Json, Key, KeyRange, LevelDBOptions, Modality, Modification, NVMEOptions,
+    NVMEViewOptions, On, RAMOptions, RocksDBOptions, ScanDirection, Snapshot, StringsVerbs, Text,
 };
 
 use tableval::{
@@ -298,8 +298,11 @@ impl Requested {
 }
 
 /// Arenas whose columns were all released, kept for later gathers, or freed at once under `--arena per-call`.
+///
+/// Every arena is made without an executor on host pages, so it lives until freed, and the columns Arrow takes over
+/// may outlive the lane whose executor filled them.
 struct ArenaRing {
-    kept: Option<Mutex<Vec<Arena>>>,
+    kept: Option<Mutex<Vec<Arena<'static>>>>,
 }
 
 impl ArenaRing {
@@ -309,20 +312,19 @@ impl ArenaRing {
         }
     }
 
-    /// A kept arena, or a new one where `executor` computes, or for the calling thread without one.
-    fn take_or_new(&self, executor: Option<&Executor>) -> Result<Arena> {
+    /// A kept arena, or a new one on host pages.
+    fn take_or_new(&self) -> Result<Arena<'static>> {
         let kept = self
             .kept
             .as_ref()
             .and_then(|kept| kept.lock().unwrap_or_else(PoisonError::into_inner).pop());
-        match (kept, executor) {
-            (Some(arena), _) => Ok(arena),
-            (None, Some(executor)) => Arena::new_in(executor).map_err(|e| e.to_string()),
-            (None, None) => Arena::new().map_err(|e| e.to_string()),
+        match kept {
+            Some(arena) => Ok(arena),
+            None => Arena::new().map_err(|e| e.to_string()),
         }
     }
 
-    fn put(&self, arena: Arena) {
+    fn put(&self, arena: Arena<'static>) {
         if let Some(kept) = &self.kept {
             kept.lock().unwrap_or_else(PoisonError::into_inner).push(arena);
         }
@@ -331,7 +333,7 @@ impl ArenaRing {
 
 /// The arena one gather's columns lie in, which the release of the last of them hands back to its ring.
 struct HeldArena {
-    arena: Option<Arena>,
+    arena: Option<Arena<'static>>,
     ring: Arc<ArenaRing>,
 }
 
@@ -346,7 +348,6 @@ impl Drop for HeldArena {
 /// One gather lane: the ring its arenas come back to, and the executor its calls run on, or none for the calling
 /// thread.
 struct Lane {
-    // Declared before the executor, so the kept arenas are freed before it drains.
     ring: Arc<ArenaRing>,
     executor: Option<Executor>,
 }
@@ -689,7 +690,7 @@ impl UstoreBackend {
                 if device.vendor != GPUVendor::Nvidia {
                     return Err("--gather gpu reads columns back through the CUDA driver alone".into());
                 }
-                // SAFETY: a null stream lends nothing, so the executor creates its own.
+                // SAFETY: a null stream leaves the executor the one it owns on the device.
                 let executor = unsafe { Executor::for_vram(device.ordinal as i32, null_mut(), 0, Gds::Automatic) }
                     .map_err(|e| e.to_string())?;
                 let driver = Driver::open(device.vendor_ordinal)?;
@@ -743,6 +744,17 @@ impl UstoreBackend {
             .ok_or_else(|| "the database failed to reopen".into())
     }
 
+    /// Makes every commit durable on the executor the database opened on, or on the calling thread, since dropping a
+    /// database writes nothing.
+    fn flush(&self) -> Result<()> {
+        let head = self.database()?.head();
+        match &self.opening {
+            Some(executor) => head.on(executor).flush(),
+            None => head.flush(),
+        }
+        .map_err(|e| e.to_string())
+    }
+
     /// Writes the documents of `table` into `collection` a batch at a time, under the keys an ingest gives them.
     fn write_documents(&self, collection: CollectionID, table: &Table) -> Result<usize> {
         let head = self.database()?.head();
@@ -777,7 +789,7 @@ impl UstoreBackend {
         stored: &Stored,
         mut each: impl FnMut(&[Key]) -> Result<()>,
     ) -> Result<()> {
-        let mut listing = self.listings.take_or_new(None)?;
+        let mut listing = self.listings.take_or_new()?;
         let view = snapshot.view();
         match self.settings.sample_rate {
             Some(rate) => {
@@ -923,6 +935,7 @@ impl UstoreBackend {
             };
             stop.store(true, Ordering::Relaxed);
             writer.join().map_err(|_| "the writer panicked".to_owned())??;
+            self.flush()?;
             let gathered = checked?;
             eprintln!(
                 "  {snapshots} snapshots during the ingest, each holding a committed prefix, the last all {} rows",
@@ -988,6 +1001,25 @@ fn gather_window(
     Ok(())
 }
 
+/// The columns `view` gathers of `keys` into `arena`, exported as Arrow arrays that hold no reference to the arena.
+fn exported_columns(
+    view: On<'_, Snapshot<'_>>,
+    collection: CollectionID,
+    keys: &[Key],
+    requested: &Requested,
+    arena: &mut Arena<'_>,
+) -> Result<Vec<ArrowDeviceArray>> {
+    let gathered = view
+        .docs_gather(collection, keys, &requested.columns, arena)
+        .map_err(|e| e.to_string())?;
+    let exported = gathered.to_arrow().map_err(|e| e.to_string())?;
+    // SAFETY: the caller keeps the arena until every host column's release, and past every device column's copy.
+    Ok(exported
+        .into_iter()
+        .map(|export| unsafe { export.into_parts() }.1)
+        .collect())
+}
+
 /// The columns of `keys` as one batch: the arena on host pages reaches Arrow in place, the device's by copy through
 /// `driver`, and `imported` adds up the bytes of each column either way.
 fn gather_keys(
@@ -999,23 +1031,22 @@ fn gather_keys(
     requested: &Requested,
     imported: &mut [ImportedBytes],
 ) -> Result<RecordBatch> {
-    let mut arena = lane.ring.take_or_new(lane.executor.as_ref())?;
     let view = match &lane.executor {
         Some(executor) => snapshot.on(executor),
         None => snapshot.view(),
     };
-    let gathered = view
-        .docs_gather(collection, keys, &requested.columns, &mut arena)
-        .map_err(|e| e.to_string())?;
-    let exported = gathered.to_arrow().map_err(|e| e.to_string())?;
-    // SAFETY: the arena moves into every host column's release below, and outlives every device column's copy.
-    let columns: Vec<ArrowDeviceArray> = exported
-        .into_iter()
-        .map(|export| unsafe { export.into_parts() }.1)
-        .collect();
+    // A device gather lands in an arena of the executor, freed with this call once its columns are copied down
+    let (mut host, mut device) = (None, None);
+    let columns = match (driver, &lane.executor) {
+        (Some(_), Some(executor)) => {
+            let arena = device.insert(Arena::new_in(executor).map_err(|e| e.to_string())?);
+            exported_columns(view, collection, keys, requested, arena)?
+        }
+        _ => exported_columns(view, collection, keys, requested, host.insert(lane.ring.take_or_new()?))?,
+    };
     // The mutex only lets the columns, released on any thread, share the arena.
     let arena = Arc::new(Mutex::new(HeldArena {
-        arena: Some(arena),
+        arena: host,
         ring: lane.ring.clone(),
     }));
     let mut arrays = Vec::with_capacity(columns.len());
@@ -1075,7 +1106,7 @@ fn append(
     prefixes: &Mutex<Vec<Prefix>>,
     stop: &AtomicBool,
 ) -> Result<()> {
-    let mut collection = database.collection(&table.name).map_err(|e| e.to_string())?;
+    let collection = database.collection(&table.name).map_err(|e| e.to_string())?;
     let mut prefix = before;
     for batch in parquet_batches(table)? {
         if stop.load(Ordering::Relaxed) {
@@ -1162,9 +1193,7 @@ impl Backend for UstoreBackend {
                     let stream = stream_of(document_batches(table)?);
                     database
                         .collection(&table.name)
-                        .and_then(|mut documents| {
-                            documents.ingest_arrow(stream, IngestOrder::Sorted, Durability::Buffered)
-                        })
+                        .and_then(|documents| documents.ingest_arrow(stream, IngestOrder::Sorted, Durability::Buffered))
                         .map_err(|e| format!("{}: {e}", table.name))?
                 }
                 // RocksDB and LevelDB serve no ingest, so the same documents land through batched writes.
@@ -1180,7 +1209,7 @@ impl Backend for UstoreBackend {
                 },
             );
         }
-        self.database()?.flush().map_err(|e| e.to_string())?;
+        self.flush()?;
         for folder in std::iter::once(&self.path).chain(&self.further) {
             eprintln!("  {}: {} bytes", folder.display(), directory_bytes(folder)?);
         }
@@ -1234,7 +1263,7 @@ impl Backend for UstoreBackend {
     }
 
     fn reopen(&mut self) -> Result<()> {
-        self.database()?.flush().map_err(|e| e.to_string())?;
+        self.flush()?;
         self.database = None;
         let database = open_database(self.settings.engine, &self.path, &self.further, self.opening.as_ref())?;
         self.database = Some(database);
@@ -1394,7 +1423,7 @@ fn sample_partition(partition: &Partition, wanted: usize, requested: &Requested)
         Some(executor) => snapshot.on(executor),
         None => snapshot.view(),
     };
-    let mut arena = lane.ring.take_or_new(lane.executor.as_ref())?;
+    let mut arena = lane.ring.take_or_new()?;
     let keys = view
         .docs_sample(partition.collection, wanted, &mut arena)
         .map_err(|e| e.to_string())?
@@ -1449,8 +1478,12 @@ fn scan_partition(partition: &Partition, drawn: &[[u8; 16]], fields: &[DocumentF
                     let mut batches = Vec::new();
                     loop {
                         // Each pull's columns stay in its arena until Arrow releases the last of them
-                        let mut arena = lane.ring.take_or_new(lane.executor.as_ref())?;
-                        let pulled = cursor.next(BATCH_ROWS, &mut arena).map_err(|e| e.to_string())?;
+                        let mut arena = lane.ring.take_or_new()?;
+                        let pulled = match &lane.executor {
+                            Some(executor) => cursor.on(executor).next(BATCH_ROWS, &mut arena),
+                            None => cursor.next(BATCH_ROWS, &mut arena),
+                        }
+                        .map_err(|e| e.to_string())?;
                         if pulled.is_empty() {
                             lane.ring.put(arena);
                             break;
