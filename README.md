@@ -2,8 +2,8 @@
 
 ![TablEval benchmarks thumbnail](https://github.com/ashvardanian/ashvardanian/raw/master/repositories/TablEval.jpg?raw=true)
 
-__TablEval__ benchmarks tabular analytics: scans, filters, group-bys, joins and sorts over billions of rows.
-It is the Rust successor to UDSB and a sibling of [RetriEval](https://github.com/ashvardanian/RetriEval) and [CrudEval](https://github.com/ashvardanian/CrudEval).
+__TablEval__ benchmarks analytics over billions of rows, from embedded query engines to GPUs: scans, filters, group-bys, joins and sorts.
+It is the Rust successor to UDSB and a sibling of [RetriEval](https://github.com/ashvardanian/RetriEval), [CrudEval](https://github.com/ashvardanian/CrudEval) and [ServEval](https://github.com/ashvardanian/ServEval).
 One shared runner drives embedded query engines, a hand-written Arrow baseline, database servers and GPU dataframes over the same Parquet parts.
 Runs load the tables once, time every query cold and then hot, verify each answer, and write timings, resource usage and configuration to JSON.
 
@@ -159,6 +159,33 @@ Each run reports a cold and several hot times per query, so tables built from th
 - `Memory`: the peak client RSS plus the server container's peak memory.
 
 Compare engines on the same dataset, row prefix, thread count and source, and only over queries that completed with matching answers.
+Dated run notes, smaller checks included, live in [CHANGELOG.md](CHANGELOG.md).
+
+### TPC-H
+
+| Machine | Class | Engine | Device | Scale | Source | Load | Geomean | Unsupported | Memory | Date |
+| :------ | :---- | :----- | :----- | ----: | :----- | ---: | ------: | ----------: | -----: | :--- |
+| -       | -     | -      | -      |     - | -      |    - |       - |           - |      - | -    |
+
+### ClickBench
+
+| Machine | Class | Engine | Device | Rows | Source | Load | Geomean | Unsupported | Memory | Date |
+| :------ | :---- | :----- | :----- | ---: | :----- | ---: | ------: | ----------: | -----: | :--- |
+| -       | -     | -      | -      |    - | -      |    - |       - |           - |      - | -    |
+
+### NYC Taxi
+
+| Machine | Class | Engine | Device | Rows | Source | Load | Query 1 | Query 2 | Query 3 | Query 4 | Memory | Date |
+| :------ | :---- | :----- | :----- | ---: | :----- | ---: | ------: | ------: | ------: | ------: | -----: | :--- |
+| -       | -     | -      | -      |    - | -      |    - |       - |       - |       - |       - |      - | -    |
+
+### Documents
+
+Hot seconds per query over one USearchMolecules collection, every partition at once.
+
+| Machine | Class | System | Documents | Partitions | `keyed-gather-10M-f1` | `sample-gather-10M-f3` | `scan-f1` | Memory | Date |
+| :------ | :---- | :----- | --------: | ---------: | --------------------: | ---------------------: | --------: | -----: | :--- |
+| -       | -     | -      |         - |          - |                     - |                      - |         - |      - | -    |
 
 ![The same five taxi trips stored row by row and column by column, where a group-by over vendor_id reads every field of every row in the row layout but only one contiguous column of small dictionary codes in the column layout](assets/rows-and-columns.svg)
 
@@ -324,25 +351,6 @@ sql/                       Taxi and TPC-H queries, pinned TPC-H answers, ClickHo
 
 Directory guides describe [source contracts](src/README.md), [datasets](data/README.md), [plotting and checks](scripts/README.md), [standalone server configurations](docker/README.md), and [the TPC-H queries' origin](sql/tpch/README.md).
 
-## Development
-
-The repository pins Rust 1.100.
-CI runs `cargo clippy` and `cargo test` per feature group, and a manually dispatched workflow checks cuDF on a CUDA worker; the pre-commit hook runs rustfmt and Ruff where they are installed.
-Every backend's tests load the four-trip Taxi fixture and, with the `generate` feature, TPC-H at scale 0.01 generated in-process, and check each query the backend supports against the pinned answers.
-The Arrow baseline and the generator depend on ForkUnion 4, which a local `.cargo/config.toml` may point at a sibling checkout until it is published.
-Arm the hooks once per clone with `git config core.hooksPath .githooks`.
-Run `scripts/check-servers.sh` for the managed server checks.
-
-## Remaining Scope
-
-The backend table above describes current support, not every engine considered.
-Sirius, DuckDB's GPU extension over libcudf, waits until DuckDB publishes it as a loadable extension.
-chDB, StarRocks, Doris, Velox through Gluten and Turso remain later candidates, with no adapters or placeholder binaries in this crate.
-
-The following planned capabilities remain incomplete:
-
-- Answers pinned for Taxi and ClickBench beyond agreement between engines.
-
 ## Benchmark Pitfalls
 
 ### Cold vs Hot
@@ -378,6 +386,25 @@ Averages merge as sums and counts, never as averages of averages, which UDSB's b
 
 Some engines size their pools once per process: Polars reads `POLARS_MAX_THREADS` at first use, and Tokio runtimes stay at the size they started with.
 TablEval opens a fresh engine per configuration, but sweeps over `--threads` in one Polars process are rejected rather than silently ignored.
+
+## Remaining Scope
+
+The backend table above describes current support, not every engine considered.
+Sirius, DuckDB's GPU extension over libcudf, waits until DuckDB publishes it as a loadable extension.
+chDB, StarRocks, Doris, Velox through Gluten and Turso remain later candidates, with no adapters or placeholder binaries in this crate.
+
+The following planned capabilities remain incomplete:
+
+- Answers pinned for Taxi and ClickBench beyond agreement between engines.
+
+## Development
+
+The repository pins Rust 1.100.
+CI runs `cargo clippy` and `cargo test` per feature group, and a manually dispatched workflow checks cuDF on a CUDA worker; the pre-commit hook runs rustfmt and Ruff where they are installed.
+Every backend's tests load the four-trip Taxi fixture and, with the `generate` feature, TPC-H at scale 0.01 generated in-process, and check each query the backend supports against the pinned answers.
+The Arrow baseline and the generator depend on ForkUnion 4, which a local `.cargo/config.toml` may point at a sibling checkout until it is published.
+Arm the hooks once per clone with `git config core.hooksPath .githooks`.
+Run `scripts/check-servers.sh` for the managed server checks.
 
 ## History
 
